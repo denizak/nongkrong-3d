@@ -1,0 +1,92 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
+#app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#hud {
+  position: fixed; left: 16px; bottom: 16px; padding: 10px 14px;
+  font: 13px/1.5 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.85); border-radius: 12px; pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+#hud .title { font-weight: 700; font-size: 15px; }
+#hud #backend { color: #5a7a3a; }
+
+/* Interaction prompt, bottom centre. */
+#prompt {
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+  padding: 8px 18px; white-space: nowrap; pointer-events: none;
+  font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.9); border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  opacity: 0; transition: opacity 0.2s ease;
+}
+#prompt.show { opacity: 1; }
+
+/* Inventory bar, top centre. */
+#inventory {
+  position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 92vw; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s ease;
+}
+#inventory.show { opacity: 1; }
+#inventory .slot {
+  padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+  font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+/* Floating "+1 Mango" toasts under the inventory bar. */
+#toasts {
+  position: fixed; left: 50%; top: 60px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none;
+}
+#toasts div {
+  padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+  font: 700 15px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.9);
+  opacity: 0; transform: translateY(-6px); transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#toasts div.show { opacity: 1; transform: none; }
+
+/* Fishpedia panel (F to toggle). */
+#fishpedia {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(0.96);
+  width: min(420px, 90vw); max-height: 80vh; overflow-y: auto; box-sizing: border-box; padding: 16px 18px;
+  border-radius: 16px; background: #fff9e8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 14px/1.5 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#fishpedia.show { opacity: 1; transform: translate(-50%, -50%); pointer-events: auto; }
+#fishpedia h2 { margin: 0 0 4px; font-size: 18px; }
+#fishpedia h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #5a7a3a; }
+#fishpedia .row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dashed rgba(0, 0, 0, 0.1); }
+#fishpedia .info { color: #4d5a44; text-align: right; }
+#fishpedia .info.unknown { color: #9a9484; }
+
+/* Catch popup card. */
+#catch-card {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(0.9);
+  padding: 12px 22px; border-radius: 16px; text-align: center; white-space: nowrap; pointer-events: none;
+  background: #fff9e8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 700 17px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  opacity: 0; transition: opacity 0.25s ease, transform 0.25s ease;
+}
+#catch-card.show { opacity: 1; transform: translate(-50%, -50%); }
+#catch-card .sub { font-size: 13px; color: #5a7a3a; }
+
+/* "!" bubble over the player's head during a bite. */
+.fish-bang {
+  position: fixed; left: 0; top: 0; transform: translate(-50%, -100%);
+  width: 30px; height: 30px; border-radius: 50%; text-align: center;
+  background: #ff5a4e; color: #fff; font: 800 20px/30px system-ui, sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); pointer-events: none; opacity: 0; transition: opacity 0.12s ease;
+}
+.fish-bang.show { opacity: 1; }
+
+/* Scarecrow speech bubble, placed above its head. */
+.speech {
+  position: fixed; left: 0; top: 0; transform: translate(-50%, -100%);
+  padding: 6px 12px; border-radius: 14px; white-space: nowrap; pointer-events: none;
+  background: #fff9e8; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  font: 600 13px/1.3 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  opacity: 0; transition: opacity 0.2s ease;
+}
+.speech.show { opacity: 1; }
