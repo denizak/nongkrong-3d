@@ -4,6 +4,7 @@ import type { Player } from '../player/Player';
 import type { Inventory } from '../ui/Inventory';
 import type { Fishpedia } from '../ui/Fishpedia';
 import { biteWindow, fishItemId, pickSpecies, type Species, type WaterKind } from './FishSpecies';
+import { sfx } from '../audio/AudioManager';
 
 export type FishState = 'idle' | 'casting' | 'waiting' | 'nibble' | 'bite' | 'caught' | 'escaped' | 'reel';
 
@@ -155,6 +156,7 @@ export class Fishing {
     this.line.visible = true;
     this.state = 'casting';
     this.timer = 0;
+    sfx.play('whoosh', { at: this.castFrom, volume: 0.8 });
   }
 
   /** E while fishing: reel in early, scare off a nibble, or hook a bite. */
@@ -231,12 +233,14 @@ export class Fishing {
     this.state = 'waiting';
     this.timer = 2 + Math.random() * 4;
     this.spawnShadow(this.timer);
+    sfx.play('plop', { at: this.target, volume: 0.9 });
   }
 
   private enterNibble() {
     this.state = 'nibble';
     this.nibblesLeft = 1 + Math.floor(Math.random() * 3);
     this.timer = 0;
+    sfx.play('plop', { at: this.target, volume: 0.15 });
   }
 
   private enterBite() {
@@ -245,6 +249,7 @@ export class Fishing {
     this.timer = biteWindow(this.species);
     this.dip = 0.3;
     this.spawnSplash();
+    sfx.play('splash', { at: this.target });
   }
 
   private catch() {
@@ -253,11 +258,15 @@ export class Fishing {
     const isNew = this.deps.pedia.record(s, cm);
     this.deps.inventory.add(fishItemId(s));
     this.deps.pedia.showCatch(`You caught a ${s.name}! ${cm} cm`, isNew);
+    // Rarer fish get a bigger jingle.
+    sfx.play(s.weight <= 2 ? 'jingle_steel_12' : s.weight <= 8 ? 'jingle_steel_05' : 'jingle_steel_00', { volume: 0.9 });
+    if (isNew) sfx.play('blip', { volume: 0.8 });
     this.beginReel('caught', RESULT_TIME);
   }
 
   private escape(msg: string) {
     this.deps.inventory.toast(msg);
+    sfx.play('jingle_pizzi_04', { volume: 0.35 });
     this.beginReel('escaped', RESULT_TIME);
   }
 

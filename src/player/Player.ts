@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import RAPIER from '@dimforge/rapier3d-compat';
+import type RAPIER from '@dimforge/rapier3d-compat';
 import type { Terrain } from '../world/Terrain';
 import type { Physics } from '../core/Physics';
 import type { CharacterModel, Pose } from './CharacterModel';
@@ -9,7 +9,7 @@ const RUN_SPEED = 7.5;
 const GRAVITY = 9.81;
 /** The player can wade into shallow water but not deeper than this. */
 const MIN_GROUND = -0.45;
-const WORLD_LIMIT = 75;
+export const WORLD_LIMIT = 75;
 /** Capsule: 0.5 half-height of the cylinder part plus a 0.35 radius, so 1.7 m tall. */
 const CAPSULE_HALF = 0.5;
 const CAPSULE_RADIUS = 0.35;
@@ -54,7 +54,7 @@ export class Player {
 
     const start = terrain.heightAt(0, 0);
     this.position.set(0, start, 0);
-    const { world } = physics;
+    const { world, RAPIER } = physics;
     this.rigid = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, start + FOOT_OFFSET, 0),
     );
@@ -159,6 +159,21 @@ export class Player {
     const tilt = 0.08 * moving * (this.speed / RUN_SPEED);
     this.body.position.y = hop + (this.model ? 0 : -SIT_DROP * this.sitAmt + LIE_LIFT * lie);
     this.body.rotation.x = tilt * (1 - lie) - (Math.PI / 2) * lie;
+  }
+
+  /** Heading in radians, as saved and restored. */
+  get headingAngle() {
+    return this.heading;
+  }
+
+  /** Teleports the character to (x, z) on the ground, facing heading. Used when restoring a save. */
+  place(x: number, z: number, heading: number) {
+    const y = this.terrain.heightAt(x, z);
+    this.heading = heading;
+    this.object.rotation.y = heading;
+    this.position.set(x, y, z);
+    this.rigid.setTranslation({ x, y: y + FOOT_OFFSET, z }, true);
+    this.vy = 0;
   }
 
   get pose(): Pose {

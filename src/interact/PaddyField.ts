@@ -4,6 +4,7 @@ import type { NatureAssets } from '../world/Assets';
 import type { Player } from '../player/Player';
 import type { Inventory } from '../ui/Inventory';
 import type { Interactable } from './Interactable';
+import { sfx } from '../audio/AudioManager';
 
 const PADDY = ZONES.paddy;
 const WATER_Y = PADDY.h + 0.06;
@@ -193,6 +194,9 @@ export class PaddyField implements Interactable {
     this.flush();
     inventory.add('rice', n);
     this.puff(cx / n, cy / n + 0.5, cz / n);
+    const at = new THREE.Vector3(cx / n, cy / n + 0.5, cz / n);
+    sfx.play('rustle', { at });
+    sfx.play('pop', { at, volume: 0.7, rateJitter: 0.1 });
     this.target = -1;
   }
 

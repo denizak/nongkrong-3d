@@ -5,8 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nongkrong 3D</title>
     <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      /* Loading overlay: inline so it paints before the JS bundle loads. */
+      #loading {
+        position: fixed; inset: 0; z-index: 100;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(180deg, #58c4c0 0%, #9fdfd6 42%, #f4e6bd 100%);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+        transition: opacity 0.6s ease;
+      }
+      #loading.fading { opacity: 0; pointer-events: none; }
+      #loading .card { text-align: center; width: min(420px, 86vw); }
+      #loading h1 { margin: 0; font-size: clamp(32px, 6vw, 48px); font-weight: 800; color: #fffdf4; text-shadow: 0 3px 12px rgba(20, 80, 80, 0.35); }
+      #loading .sub { margin: 6px 0 28px; font-size: 16px; color: #2b5b57; }
+      #loading .track { height: 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.45); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12); }
+      #loading .fill { height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #3f9e8f, #7cc46a); transition: width 0.3s ease; }
+      #loading .label { margin-top: 12px; min-height: 1.5em; color: #2b5b57; }
+      #loading .label.error { color: #a4402e; font-weight: 600; }
+      #loading button {
+        font: inherit; font-size: 22px; font-weight: 700; padding: 16px 44px; border: 0; border-radius: 999px;
+        background: #fff9e8; color: #2f3b2a; cursor: pointer;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); transition: transform 0.12s ease, box-shadow 0.12s ease;
+      }
+      #loading button:hover, #loading button:focus-visible { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 0 3px #5a7a3a, 0 10px 28px rgba(0, 0, 0, 0.2); outline: none; }
+      #loading button:disabled { opacity: 0.6; }
+      #loading [hidden] { display: none !important; }
+    </style>
   </head>
   <body>
+    <div id="loading">
+      <div class="card">
+        <h1>Nongkrong 3D</h1>
+        <p class="sub">a cozy island hangout</p>
+        <div id="loading-track" class="track"><div id="loading-fill" class="fill"></div></div>
+        <div id="loading-label" class="label">Starting…</div>
+        <button id="loading-start" hidden>Click to start</button>
+      </div>
+    </div>
     <div id="app"></div>
     <div id="inventory"></div>
     <div id="toasts"></div>

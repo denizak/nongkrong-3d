@@ -1,21 +1,29 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import type RAPIER from '@dimforge/rapier3d-compat';
 import type * as THREE from 'three/webgpu';
+
+/** The Rapier module. Loaded lazily so its wasm sits in its own chunk. */
+export type Rapier = typeof RAPIER;
 
 /** Thin wrapper around the Rapier world: gravity, static colliders and stepping. */
 export class Physics {
+  /** Rapier's runtime classes (ColliderDesc, Ray, ...). Other modules reach them through here. */
+  readonly RAPIER: Rapier;
   readonly world: RAPIER.World;
   /** The terrain trimesh collider, set by addTerrain. */
   terrainCollider: RAPIER.Collider | null = null;
   /** Collider handles the camera ray stops at, besides the terrain (e.g. the bamboo clump). */
   cameraBlockers = new Set<number>();
 
-  private constructor() {
-    this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  private constructor(R: Rapier) {
+    this.RAPIER = R;
+    this.world = new R.World({ x: 0, y: -9.81, z: 0 });
   }
 
+  /** Loads and initialises Rapier. Runs in parallel with the model loads. */
   static async create() {
-    await RAPIER.init();
-    return new Physics();
+    const R = (await import('@dimforge/rapier3d-compat')).default;
+    await R.init();
+    return new Physics(R);
   }
 
   step(dt: number) {
@@ -29,7 +37,7 @@ export class Physics {
     const geo = mesh.geometry;
     const positions = geo.getAttribute('position').array as Float32Array;
     const indices = new Uint32Array(geo.index!.array);
-    this.terrainCollider = this.world.createCollider(RAPIER.ColliderDesc.trimesh(positions, indices));
+    this.terrainCollider = this.world.createCollider(this.RAPIER.ColliderDesc.trimesh(positions, indices));
   }
 
   /** Immovable collider at a world position (no rigid body needed). */

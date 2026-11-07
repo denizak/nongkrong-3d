@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import RAPIER from '@dimforge/rapier3d-compat';
 import type { Physics } from '../core/Physics';
 
 /** The camera never gets closer than this to the focus point. */
@@ -52,7 +51,7 @@ export class CameraRig {
     const terrainHandle = this.physics.terrainCollider?.handle;
     const blockers = this.physics.cameraBlockers;
     const hit = this.physics.world.castRay(
-      new RAPIER.Ray(origin, dir),
+      new this.physics.RAPIER.Ray(origin, dir),
       this.distance,
       true,
       undefined,

@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import './chat.css';
 import type { Input } from '../core/Input';
 import type { Player } from '../player/Player';
+import { sfx } from '../audio/AudioManager';
 
 /** Anchor heights above the player's feet, in metres, by pose. */
 const HEIGHT_STAND = 2.3;
@@ -104,7 +105,10 @@ export class ChatBubble {
   private submit() {
     const text = this.field.value.trim();
     this.close();
-    if (text) this.say(text);
+    if (text) {
+      sfx.play('blip');
+      this.say(text);
+    }
   }
 
   /** Shows `text` in a speech bubble above the character, replacing any current one. */

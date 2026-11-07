@@ -323,7 +323,8 @@ export class CharacterModel {
    * missing files with index.html, so the content type is checked too.
    * Returns null when there is no model and the primitive body should be used.
    */
-  static async load(): Promise<CharacterModel | null> {
+  /** `onDone` runs once the attempt finishes, whether or not the model loaded. */
+  static async load(onDone?: () => void): Promise<CharacterModel | null> {
     try {
       const head = await fetch(MODEL_URL, { method: 'HEAD' });
       const type = head.headers.get('content-type') ?? '';
@@ -333,6 +334,8 @@ export class CharacterModel {
     } catch (err) {
       console.warn('Character model not loaded, using placeholder body.', err);
       return null;
+    } finally {
+      onDone?.();
     }
   }
 

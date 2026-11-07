@@ -1,4 +1,5 @@
 import { SPECIES, type Species, type WaterKind } from '../interact/FishSpecies';
+import { sfx } from '../audio/AudioManager';
 
 const KEY = 'nongkrong.fishpedia';
 const CARD_TIME = 2.6;
@@ -40,6 +41,7 @@ export class Fishpedia {
 
   toggle() {
     this.open = !this.open;
+    sfx.play('blip', { volume: 0.7 });
     if (this.open) this.render();
     this.panel.classList.toggle('show', this.open);
   }

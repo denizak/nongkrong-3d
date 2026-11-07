@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type { Birds } from './Birds';
 import type { Interactable } from './Interactable';
+import { sfx } from '../audio/AudioManager';
 
 const TAU = Math.PI * 2;
 const SPIN_TIME = 1.2;
@@ -114,6 +115,7 @@ export class Scarecrow implements Interactable {
     this.lastLine = i;
     this.bubble.textContent = LINES[i];
     this.bubble.classList.add('show');
+    sfx.play('knock', { at: this.position, rateJitter: 0.08 });
     this.deps.birds.scareAll();
   }
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type { Terrain } from '../world/Terrain';
 import type { Inventory } from '../ui/Inventory';
+import { sfx } from '../audio/AudioManager';
 
 const RADIUS = 0.14;
 const GRAVITY = 9.8;
@@ -24,6 +25,9 @@ export class Pickups {
   private fruits: Fruit[] = [];
   private geo = new THREE.SphereGeometry(RADIUS, 8, 6);
   private mat = new THREE.MeshStandardMaterial({ color: '#ff9d2e', roughness: 0.5, flatShading: true });
+  /** Pickups collected in quick succession climb in pitch. */
+  private streak = 0;
+  private lastPickup = -Infinity;
 
   constructor(
     private scene: THREE.Scene,
@@ -64,6 +68,7 @@ export class Pickups {
         const ground = this.terrain.heightAt(p.x, p.z) + RADIUS;
         if (p.y <= ground) {
           p.y = ground;
+          if (f.vy < -1) sfx.play('thud', { at: p, volume: f.bounces === 0 ? 0.9 : 0.5, rateJitter: 0.1 });
           if (f.bounces < 2 && f.vy < -1) {
             // Bounce once or twice, losing energy each time.
             f.vy = -f.vy * 0.4;
@@ -83,6 +88,9 @@ export class Pickups {
           f.state = 'collect';
           f.t = 0;
           f.from.copy(p);
+          this.streak = time - this.lastPickup < 1.5 ? this.streak + 1 : 0;
+          this.lastPickup = time;
+          sfx.play('pop', { rate: 1 + 0.3 * Math.min(1, this.streak / 4), rateJitter: 0.05, volume: 0.8 });
         }
       } else {
         // Fly into the player and shrink away.

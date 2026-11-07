@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import RAPIER from '@dimforge/rapier3d-compat';
 import type { Physics } from '../core/Physics';
 import { Terrain, ZONES, mulberry32 } from './Terrain';
 import { instanceModel, type NatureAssets, type NatureName } from './Assets';
@@ -31,13 +30,18 @@ const LARGE_ROCKS: NatureName[] = ['rock_largeA', 'rock_largeB', 'rock_largeC', 
 const SMALL_ROCKS: NatureName[] = ['rock_smallA', 'rock_smallB', 'rock_smallC'];
 const BUSHES: NatureName[] = ['plant_bush', 'plant_bushLarge', 'plant_bushDetailed'];
 /** Models that skip shadow casting: small, flat or many-instanced. */
-const NO_SHADOW = new Set<NatureName>(['mushroom_red', 'crops_wheatStageB', 'lily_large', 'lily_small']);
+const NO_SHADOW = new Set<NatureName>([
+  'mushroom_red', 'crops_wheatStageB', 'lily_large', 'lily_small',
+  'flower_purpleA', 'flower_redA', 'flower_yellowA', 'flower_purpleB', 'flower_redB', 'flower_yellowB',
+  'grass', 'grass_large', 'grass_leafs',
+]);
 
 /**
  * Places trees, rocks, bushes, decorations, bamboo, lily pads, a rice paddy
  * and the scarecrow (rice is built by PaddyField). Each model is one InstancedMesh per part.
  */
 export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics, assets: NatureAssets): Props {
+  const { ColliderDesc } = physics.RAPIER;
   const rand = mulberry32(42);
   const { spawn, pond, paddy } = ZONES;
   const group = new THREE.Group();
@@ -96,7 +100,7 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
     const y = terrain.heightAt(x, z);
     const h = range(4, 5);
     const name = pick(FRUIT_TREES);
-    physics.addStatic(RAPIER.ColliderDesc.cylinder(h * 0.25, 0.35), x, y + h * 0.25, z);
+    physics.addStatic(ColliderDesc.cylinder(h * 0.25, 0.35), x, y + h * 0.25, z);
 
     // Tree model under its own root, so shaking it moves the whole tree.
     const object = new THREE.Object3D();
@@ -129,14 +133,14 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
     if (!p) continue;
     const h = range(5, 7);
     add(pick(PALMS), p.x, p.y, p.z, h);
-    physics.addStatic(RAPIER.ColliderDesc.cylinder(h * 0.4, 0.3), p.x, p.y + h * 0.4, p.z);
+    physics.addStatic(ColliderDesc.cylinder(h * 0.4, 0.3), p.x, p.y + h * 0.4, p.z);
   }
   for (let i = 0; i < 6; i++) {
     const p = findSpot(36, (_x, _z, h) => h > 0.9 && h < 3.5);
     if (!p) continue;
     const h = range(5, 7);
     add(pick(PALMS), p.x, p.y, p.z, h);
-    physics.addStatic(RAPIER.ColliderDesc.cylinder(h * 0.4, 0.3), p.x, p.y + h * 0.4, p.z);
+    physics.addStatic(ColliderDesc.cylinder(h * 0.4, 0.3), p.x, p.y + h * 0.4, p.z);
   }
 
   // Rocks: large ones always get a ball collider, small ones only if at least 0.5 m.
@@ -148,7 +152,7 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
     const base = p.y - 0.1 * h;
     add(name, p.x, base, p.z, h);
     const r = widthOf(name, h) * 0.45;
-    physics.addStatic(RAPIER.ColliderDesc.ball(r), p.x, base + r * 0.9, p.z);
+    physics.addStatic(ColliderDesc.ball(r), p.x, base + r * 0.9, p.z);
   }
   for (let i = 0; i < 30; i++) {
     const p = findSpot(60, (_x, _z, h) => h > 0.2);
@@ -158,7 +162,7 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
     add(name, p.x, p.y, p.z, h);
     if (h >= 0.5) {
       const r = widthOf(name, h) * 0.45;
-      physics.addStatic(RAPIER.ColliderDesc.ball(r), p.x, p.y + r * 0.9, p.z);
+      physics.addStatic(ColliderDesc.ball(r), p.x, p.y + r * 0.9, p.z);
     }
   }
 
@@ -191,7 +195,7 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
     add('crops_bambooStageB', x, terrain.heightAt(x, z), z, range(3, 4));
   }
   // One camera-blocking cylinder around the whole clump: spread 1.2 m plus 0.3 m, stalks up to 4 m.
-  physics.addCameraBlocker(RAPIER.ColliderDesc.cylinder(2, 1.5), bx, terrain.heightAt(bx, bz) + 2, bz);
+  physics.addCameraBlocker(ColliderDesc.cylinder(2, 1.5), bx, terrain.heightAt(bx, bz) + 2, bz);
 
   // Lily pads floating on the pond.
   for (let i = 0; i < 16; i++) {
@@ -214,6 +218,6 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
   const scarecrow = buildScarecrow();
   scarecrow.position.set(scarecrowX, terrain.heightAt(scarecrowX, scarecrowZ), scarecrowZ);
   group.add(scarecrow);
-  physics.addStatic(RAPIER.ColliderDesc.cylinder(1.2, 0.1), scarecrowX, scarecrow.position.y + 1.2, scarecrowZ);
+  physics.addStatic(ColliderDesc.cylinder(1.2, 0.1), scarecrowX, scarecrow.position.y + 1.2, scarecrowZ);
   return { fruitTrees, scarecrow };
 }

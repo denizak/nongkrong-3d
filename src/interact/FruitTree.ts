@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import type { FruitTree as FruitTreeSite } from '../world/Props';
 import type { Interactable, InteractContext } from './Interactable';
 import type { Pickups } from './Pickups';
+import { sfx } from '../audio/AudioManager';
 
 const SHAKE_TIME = 0.8;
 /** Fruit lets go this far into the shake. */
@@ -45,6 +46,7 @@ export class FruitTree implements Interactable {
     if (this.shakeT >= 0 || this.hangingCount() === 0) return;
     this.pickups = ctx.pickups;
     this.shakeT = 0;
+    sfx.play('rustle', { at: this.position });
     this.pendingDrops = 1 + Math.floor(Math.random() * MAX_DROP);
   }
 

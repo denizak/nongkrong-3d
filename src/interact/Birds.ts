@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { ZONES } from '../world/Terrain';
+import { sfx } from '../audio/AudioManager';
 
 const TAU = Math.PI * 2;
 const MAX_BIRDS = 6;
@@ -197,6 +198,7 @@ export class Birds {
     b.body.position.y = BODY_Y;
     if (u >= 1) {
       b.state = 'perch';
+      sfx.play('chirp', { at: b.root.position, volume: 0.35 });
       b.stayLeft = 25 + Math.random() * 20;
       b.turnAt = 1 + Math.random() * 2;
       b.hopAt = 3 + Math.random() * 4;
@@ -244,6 +246,7 @@ export class Birds {
     b.state = 'flee';
     b.t = 0;
     b.vel.set(dir.x * 9, 5, dir.z * 9);
+    sfx.play('flutter', { at: b.root.position, volume: 0.6 });
   }
 
   /** Random horizontal direction pointing away from the paddy centre. */

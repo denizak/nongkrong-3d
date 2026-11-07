@@ -50,11 +50,15 @@ export interface NatureModel {
 
 export type NatureAssets = Record<NatureName, NatureModel>;
 
-/** Loads every nature model in parallel and normalises each to unit size. */
-export async function loadNatureAssets(): Promise<NatureAssets> {
+/** Loads every nature model in parallel and normalises each to unit size. `onLoaded` runs after each one. */
+export async function loadNatureAssets(onLoaded?: () => void): Promise<NatureAssets> {
   const loader = new GLTFLoader();
   const entries = await Promise.all(
-    NATURE_MODELS.map(async (name) => [name, await loadModel(loader, name)] as const),
+    NATURE_MODELS.map(async (name) => {
+      const model = await loadModel(loader, name);
+      onLoaded?.();
+      return [name, model] as const;
+    }),
   );
   return Object.fromEntries(entries) as NatureAssets;
 }
