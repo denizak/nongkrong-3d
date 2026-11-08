@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
 import type { Physics } from '../core/Physics';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import { mulberry32, type Terrain } from './Terrain';
+import { COAST_H, mulberry32 } from './Terrain';
 import { MeshBaker } from './Bake';
-import { SPACING, type Archipelago, type Cell, type Side } from './Archipelago';
+import { COLS, ISLANDS, ROWS, SPACING, centreOf, inProxyWindow, ownerOfCell, type IslandKind, type Vec2 } from './Islands';
+import type { Terrains } from './Terrains';
 
 const DECK_W = 3;
 const DECK_HALF = DECK_W / 2;
@@ -11,8 +12,6 @@ const DECK_HALF = DECK_W / 2;
 const ARCH = 1;
 /** The deck starts this far inland of the coast. */
 const LANDING_INSET = 4;
-/** Land counts as coast once it drops below this height (m). */
-const COAST_H = 0.5;
 /** Keep-clear corridor: 12 m inland from each landing, this far either side of the axis. */
 const CORRIDOR_HALF = 2.5;
 const CORRIDOR_INLAND = 12;
@@ -31,22 +30,38 @@ const RAIL_H = 1.1;
 const RAIL_SAG = 0.12;
 const ROPE_R = 0.025;
 const ROPE_SEG = 4;
+/** Collider boxes are at most this long (m), so the deck's slope does not lift their ends above the deck. */
+const COLLIDER_SEG_LEN = 2.5;
 const COLLIDER_SEGS = 12;
 const RAIL_COLLIDER_H = 0.6;
 /** Walkable half-width around the deck centre line (the rails sit at 1.5 to 1.6). */
 const WALK_HALF = 1.6;
 const WALK_MARGIN = 0.5;
+/** Bridges are drawn while one of their two islands is within the proxy window. */
+const COAST_SEARCH = 250;
 
-type Axis = 'x' | 'z';
+export type Axis = 'x' | 'z';
 
-/** One bridge in the owner island's local frame. The deck runs from p0 to p1 along `axis`, on the line through the centre. */
+/**
+ * One bridge, in world coordinates. The deck runs from p0 to p1 along `axis`, on the line at `lateral`
+ * across it. `islands` are the two islands it joins.
+ */
 export interface Layout {
-  side: Side;
+  id: string;
+  islands: [number, number];
   axis: Axis;
+  lateral: number;
   p0: number;
   p1: number;
   h0: number;
   h1: number;
+}
+
+interface Rect {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
 }
 
 interface DeckPoint {
@@ -56,110 +71,130 @@ interface DeckPoint {
   q: THREE.Quaternion;
 }
 
-const SIDES: Side[] = ['E', 'W', 'N', 'S'];
+/**
+ * Distance from `(ox, oz)` along (dx, dz) to the shore: the first point below the coast height that stays
+ * below it for `sustain` metres. A sustain of 0 takes the first such point (the normal islands' original rule).
+ * The main island's noise has bumps that dip under the coast height inside the land, so it uses 6 m.
+ */
+function coastFrom(ground: (x: number, z: number) => number, ox: number, oz: number, dx: number, dz: number, sustain = 0): number {
+  for (let d = 0; d <= COAST_SEARCH; d += 0.25) {
+    if (ground(ox + dx * d, oz + dz * d) >= COAST_H) continue;
+    let sea = true;
+    for (let s = 0.25; s <= sustain && sea; s += 0.25) sea = ground(ox + dx * (d + s), oz + dz * (d + s)) < COAST_H;
+    if (sea) return d;
+  }
+  return COAST_SEARCH;
+}
+
+/** Sustain (m) for a kind's shore: see coastFrom. */
+const sustainOf = (kind: IslandKind) => (kind === 'main' ? MAIN_SUSTAIN : 0);
+const MAIN_SUSTAIN = 6;
+
+/** Keep-clear rectangle for a landing `d` metres from the centre, in direction (dx, dz) at lateral offset `lat`. */
+function landingRect(dx: number, dz: number, d: number, lat: number): Rect {
+  const h = CORRIDOR_HALF;
+  if (dx > 0) return { x0: d - LANDING_INSET - CORRIDOR_INLAND, x1: d + 2, z0: lat - h, z1: lat + h };
+  if (dx < 0) return { x0: -(d + 2), x1: -(d - LANDING_INSET - CORRIDOR_INLAND), z0: lat - h, z1: lat + h };
+  if (dz > 0) return { x0: lat - h, x1: lat + h, z0: d - LANDING_INSET - CORRIDOR_INLAND, z1: d + 2 };
+  return { x0: lat - h, x1: lat + h, z0: -(d + 2), z1: -(d - LANDING_INSET - CORRIDOR_INLAND) };
+}
+
+const DIRS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 /**
- * Wooden bridges between neighbouring islands. Each island owns its east and north bridge (its
- * visuals live under the island root); the proxies draw the other two. The live island also
- * holds physics colliders for all four of its bridges, and its walkable corridors.
+ * Wooden bridges between edge-adjacent islands, all built once in world coordinates. Normal-normal bridges
+ * run along the line through both centres. A main-normal bridge runs along the line through the normal
+ * island's centre, so the main island gets up to two per side. Bridges touching the live island get
+ * physics colliders in its local frame, and the whole set is drawn offset by minus the live centre.
  */
 export class Bridges {
   readonly root = new THREE.Group();
-  readonly layouts: Record<Side, Layout>;
-  /** Distance from the centre to the coast in each direction (m). */
-  readonly coast: Record<Side, number>;
-  private corridors: Array<{ x0: number; x1: number; z0: number; z1: number }>;
+  readonly layouts: Layout[];
+  private corridors: Record<IslandKind, Rect[]>;
+  private groups: THREE.Group[] = [];
   private active: Layout[] = [];
   private colliders: RAPIER.Collider[] = [];
-  private eGroup = new THREE.Group();
-  private nGroup = new THREE.Group();
-  /** One group per bridge end-to-end: its four lantern flames, as two merged meshes. */
+  private centre: Vec2 = { x: 0, z: 0 };
+  /** One group per bridge: its four lantern flames, shared by every bridge. */
   private flames: THREE.Object3D[] = [];
   private flameOuter: THREE.MeshBasicMaterial;
   private flameInner: THREE.MeshBasicMaterial;
+  private plankMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, flatShading: true });
+  private frameMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true });
   private flameOuterGeo = new THREE.ConeGeometry(0.16, 0.5, 6).translate(0, 0.25, 0);
   private flameInnerGeo = new THREE.ConeGeometry(0.08, 0.3, 5).translate(0, 0.15, 0);
 
   constructor(
     parent: THREE.Object3D,
-    private terrain: Terrain,
+    private terrains: Terrains,
     private physics: Physics,
   ) {
     this.root.name = 'bridges';
     parent.add(this.root);
 
-    const c = {
-      E: this.coastDistance(1, 0),
-      W: this.coastDistance(-1, 0),
-      N: this.coastDistance(0, -1),
-      S: this.coastDistance(0, 1),
+    this.layouts = this.buildLayouts();
+    this.corridors = {
+      normal: this.landingRects('normal'),
+      main: this.landingRects('main'),
     };
-    this.coast = c;
-    const mk = (side: Side, axis: Axis, p0: number, p1: number): Layout => ({
-      side, axis, p0, p1, h0: this.landHeight(axis, p0), h1: this.landHeight(axis, p1),
-    });
-    // E and W are one bridge seen from each island; N and S likewise. Ends are in the owner's frame.
-    this.layouts = {
-      E: mk('E', 'x', c.E - LANDING_INSET, SPACING - c.W + LANDING_INSET),
-      W: mk('W', 'x', c.E - LANDING_INSET - SPACING, -(c.W - LANDING_INSET)),
-      N: mk('N', 'z', -(c.N - LANDING_INSET), -(SPACING - c.S + LANDING_INSET)),
-      S: mk('S', 'z', SPACING - c.N + LANDING_INSET, c.S - LANDING_INSET),
-    };
-
-    const h = CORRIDOR_HALF;
-    this.corridors = [
-      { x0: c.E - LANDING_INSET - CORRIDOR_INLAND, x1: c.E + 2, z0: -h, z1: h },
-      { x0: -(c.W + 2), x1: -(c.W - LANDING_INSET - CORRIDOR_INLAND), z0: -h, z1: h },
-      { x0: -h, x1: h, z0: -(c.N + 2), z1: -(c.N - LANDING_INSET - CORRIDOR_INLAND) },
-      { x0: -h, x1: h, z0: c.S - LANDING_INSET - CORRIDOR_INLAND, z1: c.S + 2 },
-    ];
 
     this.flameOuter = new THREE.MeshBasicMaterial({
       color: '#ff8a2a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0,
     });
     this.flameInner = new THREE.MeshBasicMaterial({ color: '#ffd36b', transparent: true, depthWrite: false, opacity: 0 });
 
-    this.eGroup.name = 'bridgeE';
-    this.nGroup.name = 'bridgeN';
-    this.root.add(this.eGroup, this.nGroup);
-    this.buildDeck(this.eGroup, this.layouts.E, 1);
-    this.buildDeck(this.nGroup, this.layouts.N, 2);
+    this.layouts.forEach((l, i) => {
+      const g = new THREE.Group();
+      g.name = `bridge ${l.id}`;
+      this.root.add(g);
+      this.groups.push(g);
+      this.buildDeck(g, l, i + 1);
+    });
   }
 
-  /** Keep props and vegetation out of the bridge landings. */
-  inCorridor(x: number, z: number): boolean {
-    return this.corridors.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+  /** Number of bridges in the world. */
+  get count(): number {
+    return this.layouts.length;
   }
 
-  /** True when (x, z) in the live island's local frame is on one of its existing bridges. */
+  /** The keep-clear test for props and vegetation on a kind of island, in that island's local frame. */
+  corridorFor(kind: IslandKind): (x: number, z: number) => boolean {
+    const rects = this.corridors[kind];
+    return (x, z) => rects.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+  }
+
+  /** True when (x, z), in the live island's local frame, is on one of its bridges. */
   onBridge(x: number, z: number): boolean {
+    const wx = x + this.centre.x;
+    const wz = z + this.centre.z;
     for (const l of this.active) {
       const lo = Math.min(l.p0, l.p1) - WALK_MARGIN;
       const hi = Math.max(l.p0, l.p1) + WALK_MARGIN;
-      const a = l.axis === 'x' ? x : z;
-      const b = l.axis === 'x' ? z : x;
-      if (a >= lo && a <= hi && Math.abs(b) <= WALK_HALF) return true;
+      const a = l.axis === 'x' ? wx : wz;
+      const b = l.axis === 'x' ? wz : wx;
+      if (a >= lo && a <= hi && Math.abs(b - l.lateral) <= WALK_HALF) return true;
     }
     return false;
   }
 
-  /** Live island changed: rebuild the four bridge colliders for the cell's existing neighbours and show its own E and N visuals. */
-  applyCell(cell: Cell, arch: Archipelago) {
-    for (const c of this.colliders) this.physics.world.removeCollider(c, true);
+  /** The live island changed: move the drawing by its centre, show the nearby bridges, and collide with the ones it touches. */
+  applyIsland(id: number) {
+    const c = centreOf(id);
+    this.centre = c;
+    this.root.position.set(-c.x, 0, -c.z);
+    this.layouts.forEach((l, i) => {
+      this.groups[i].visible = inProxyWindow(id, l.islands[0]) || inProxyWindow(id, l.islands[1]);
+    });
+
+    for (const col of this.colliders) this.physics.world.removeCollider(col, true);
     this.colliders = [];
-    this.active = [];
-    for (const side of SIDES) {
-      if (!arch.hasNeighbor(side, cell)) continue;
-      this.active.push(this.layouts[side]);
-      this.addColliders(this.layouts[side]);
-    }
-    this.eGroup.visible = arch.hasNeighbor('E', cell);
-    this.nGroup.visible = arch.hasNeighbor('N', cell);
+    this.active = this.layouts.filter((l) => l.islands.includes(id));
+    for (const l of this.active) this.addColliders(l);
     // A collider created between steps is missed by the character controller until the next step.
     this.physics.world.step();
   }
 
-  /** Night: the bridge lanterns come on. Opacity is on shared materials, so proxies follow too. */
+  /** Night: the bridge lanterns come on. Opacity is on shared materials. */
   update(night: number) {
     const on = night > 0.01;
     for (const f of this.flames) f.visible = on;
@@ -167,17 +202,63 @@ export class Bridges {
     this.flameInner.opacity = night;
   }
 
-  /** Landing height of the land at `p` along `axis`, wrapped into the centre island's frame. */
-  private landHeight(axis: Axis, p: number): number {
-    const w = p - Math.round(p / SPACING) * SPACING;
-    return axis === 'x' ? this.terrain.heightAt(w, 0) : this.terrain.heightAt(0, w);
+  /** Every bridge, joining each pair of edge-adjacent islands once. */
+  private buildLayouts(): Layout[] {
+    const out: Layout[] = [];
+    const pair = (c1: number, r1: number, c2: number, r2: number, axis: Axis) => {
+      const a = ownerOfCell(c1, r1);
+      const b = ownerOfCell(c2, r2);
+      if (a === null || b === null || a === b) return;
+      const A = centreOf(a);
+      const B = centreOf(b);
+      // Both cells share a row (x bridges) or a column (z bridges); the line runs through the normal island's centre.
+      const lateral = axis === 'x' ? r1 * SPACING : c1 * SPACING;
+      const oA = axis === 'x' ? { x: A.x, z: lateral } : { x: lateral, z: A.z };
+      const oB = axis === 'x' ? { x: B.x, z: lateral } : { x: lateral, z: B.z };
+      const [dx, dz] = axis === 'x' ? [1, 0] : [0, 1];
+      const dA = coastFrom(this.terrains.heightAtWorld, oA.x, oA.z, dx, dz, sustainOf(ISLANDS[a].kind));
+      const dB = coastFrom(this.terrains.heightAtWorld, oB.x, oB.z, -dx, -dz, sustainOf(ISLANDS[b].kind));
+      const along = (p: Vec2) => (axis === 'x' ? p.x : p.z);
+      const p0 = along(A) + dA - LANDING_INSET;
+      const p1 = along(B) - dB + LANDING_INSET;
+      const at = (t: number) => (axis === 'x' ? { x: t, z: lateral } : { x: lateral, z: t });
+      const q0 = at(p0);
+      const q1 = at(p1);
+      out.push({
+        id: `${a}-${b}`,
+        islands: [a, b],
+        axis,
+        lateral,
+        p0,
+        p1,
+        h0: this.terrains.heightAtWorld(q0.x, q0.z),
+        h1: this.terrains.heightAtWorld(q1.x, q1.z),
+      });
+    };
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        pair(c, r, c + 1, r, 'x');
+        pair(c, r, c, r + 1, 'z');
+      }
+    }
+    return out;
   }
 
-  private coastDistance(dx: number, dz: number): number {
-    for (let d = 0; d <= 120; d += 0.25) {
-      if (this.terrain.heightAt(dx * d, dz * d) < COAST_H) return d;
+  /** Corridors where each kind's bridges can land. The main island has a landing per side at each of two offsets. */
+  private landingRects(kind: IslandKind): Rect[] {
+    const terrain = this.terrains.of(kind);
+    const ground = (x: number, z: number) => terrain.heightAt(x, z);
+    const offsets = kind === 'main' ? [-SPACING / 2, SPACING / 2] : [0];
+    const out: Rect[] = [];
+    for (const [dx, dz] of DIRS) {
+      for (const lat of offsets) {
+        const ox = dz !== 0 ? lat : 0;
+        const oz = dx !== 0 ? lat : 0;
+        const d = coastFrom(ground, ox, oz, dx, dz, sustainOf(kind));
+        out.push(landingRect(dx, dz, d, lat));
+      }
     }
-    return 120;
+    return out;
   }
 
   /** Centre-line frame at arc length s: top surface point, normal, lateral unit vector and an orientation quaternion. */
@@ -191,7 +272,7 @@ export class Bridges {
     const isX = l.axis === 'x';
     const u = isX ? new THREE.Vector3(sgn, 0, 0) : new THREE.Vector3(0, 0, sgn);
     const v = isX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
-    const top = isX ? new THREE.Vector3(a, h, 0) : new THREE.Vector3(0, h, a);
+    const top = isX ? new THREE.Vector3(a, h, l.lateral) : new THREE.Vector3(l.lateral, h, a);
     const n = new THREE.Vector3(-dhds * u.x, 1, -dhds * u.z).normalize();
     const z = new THREE.Vector3().crossVectors(v, n);
     const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(v, n, z));
@@ -221,10 +302,7 @@ export class Bridges {
       m.compose(pos, d.q, plankScale);
       planks.add(plankGeo, m, col.set(PLANK_COLOR).multiplyScalar(0.85 + rand() * 0.25));
     }
-    const plankMesh = new THREE.Mesh(
-      planks.build(),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, flatShading: true }),
-    );
+    const plankMesh = new THREE.Mesh(planks.build(), this.plankMat);
     plankMesh.name = 'bridge-planks';
     plankMesh.castShadow = plankMesh.receiveShadow = true;
     parent.add(plankMesh);
@@ -273,8 +351,7 @@ export class Bridges {
       }
     }
 
-    // Lanterns at both ends, one on each post. The cups join the frame; the glowing cones share one group
-    // per bridge, so the whole bridge's lanterns switch on and off together.
+    // Lanterns at both ends, one on each post. The glowing cones share one group per bridge.
     const cupGeo = new THREE.CylinderGeometry(0.13, 0.09, 0.16, 6);
     const cupColor = new THREE.Color(CUP_COLOR);
     const flameOuter = new MeshBaker(false);
@@ -290,10 +367,7 @@ export class Bridges {
         flameInner.add(this.flameInnerGeo, at);
       }
     }
-    const frameMesh = new THREE.Mesh(
-      frame.build(),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true }),
-    );
+    const frameMesh = new THREE.Mesh(frame.build(), this.frameMat);
     frameMesh.name = 'bridge-frame';
     frameMesh.castShadow = true;
     parent.add(frameMesh);
@@ -309,26 +383,31 @@ export class Bridges {
     this.flames.push(flames);
   }
 
-  /** Deck, side rails as thin colliders, one set per segment that follows the arch. */
+  /** Deck, side rails as thin colliders, one set per segment that follows the arch. Positions are local to the live centre. */
   private addColliders(l: Layout) {
     const { ColliderDesc } = this.physics.RAPIER;
     const L = Math.abs(l.p1 - l.p0);
-    const segHalf = L / COLLIDER_SEGS / 2 + 0.15;
+    const segs = Math.max(COLLIDER_SEGS, Math.ceil(L / COLLIDER_SEG_LEN));
+    const segHalf = L / segs / 2 + 0.15;
     const world = this.physics.world;
-    for (let k = 0; k < COLLIDER_SEGS; k++) {
-      const d = this.deckAt(l, ((k + 0.5) * L) / COLLIDER_SEGS);
-      const c = d.top.clone().addScaledVector(d.n, -0.15);
+    const c = this.centre;
+    for (let k = 0; k < segs; k++) {
+      const d = this.deckAt(l, ((k + 0.5) * L) / segs);
+      const deck = d.top.clone().addScaledVector(d.n, -0.15);
       this.colliders.push(
-        world.createCollider(ColliderDesc.cuboid(DECK_HALF, 0.15, segHalf).setTranslation(c.x, c.y, c.z).setRotation(d.q)),
+        world.createCollider(
+          ColliderDesc.cuboid(DECK_HALF, 0.15, segHalf).setTranslation(deck.x - c.x, deck.y, deck.z - c.z).setRotation(d.q),
+        ),
       );
       for (const side of [-1, 1]) {
         const r = d.top.clone().addScaledVector(d.v, side * (DECK_HALF + 0.05)).addScaledVector(d.n, RAIL_COLLIDER_H / 2);
         this.colliders.push(
           world.createCollider(
-            ColliderDesc.cuboid(0.05, RAIL_COLLIDER_H / 2, segHalf).setTranslation(r.x, r.y, r.z).setRotation(d.q),
+            ColliderDesc.cuboid(0.05, RAIL_COLLIDER_H / 2, segHalf).setTranslation(r.x - c.x, r.y, r.z - c.z).setRotation(d.q),
           ),
         );
       }
     }
   }
 }
+

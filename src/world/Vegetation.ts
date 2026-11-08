@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { ZONES, mulberry32, type Terrain } from './Terrain';
+import { mulberry32, type ShapeSpec, type Terrain } from './Terrain';
 import { instanceModel, type NatureAssets, type NatureName } from './Assets';
 
 const GRASS_ENABLED = false; // grass looked off; disabled for now
@@ -15,9 +15,12 @@ export function addVegetation(
   terrain: Terrain,
   assets: NatureAssets,
   inCorridor: (x: number, z: number) => boolean,
+  spec: ShapeSpec,
 ) {
   const rand = mulberry32(911);
-  const { pond, paddy } = ZONES;
+  const { pond, paddy } = spec.zones;
+  const K = spec.scale;
+  const density = K * K;
   const group = new THREE.Group();
   group.name = 'vegetation';
   scene.add(group);
@@ -25,7 +28,7 @@ export function addVegetation(
   // Grassy land: inland, above the beach, not in the pond, paddy or bridge landings.
   const grassy = (x: number, z: number) => {
     if (inCorridor(x, z)) return false;
-    if (Math.hypot(x, z) > 44) return false;
+    if (Math.hypot(x, z) > 44 * K) return false;
     if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 2) return false;
     if (Math.abs(x - paddy.x) < paddy.w / 2 + 1 && Math.abs(z - paddy.z) < paddy.d / 2 + 1) return false;
     return terrain.heightAt(x, z) > 0.7;
@@ -35,8 +38,8 @@ export function addVegetation(
   const sample = (count: number) => {
     const points: { x: number; z: number; y: number }[] = [];
     for (let tries = 0; points.length < count && tries < count * 50; tries++) {
-      const x = (rand() - 0.5) * 150;
-      const z = (rand() - 0.5) * 150;
+      const x = (rand() - 0.5) * 150 * K;
+      const z = (rand() - 0.5) * 150 * K;
       if (grassy(x, z)) points.push({ x, z, y: terrain.heightAt(x, z) });
     }
     return points;
@@ -67,6 +70,6 @@ export function addVegetation(
 
   // Tufts are kept short so they read as grass, not crystal shards.
   const grassSize = (name: NatureName): [number, number] => (name === 'grass' ? [0.2, 0.4] : [0.25, 0.45]);
-  if (GRASS_ENABLED) build(sample(3000), GRASS, grassSize, 0.25);
-  build(sample(500), FLOWERS, () => [0.3, 0.5], 0.2);
+  if (GRASS_ENABLED) build(sample(Math.round(3000 * density)), GRASS, grassSize, 0.25);
+  build(sample(Math.round(500 * density)), FLOWERS, () => [0.3, 0.5], 0.2);
 }

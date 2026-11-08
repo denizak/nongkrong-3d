@@ -1,6 +1,6 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import type { Player } from '../player/Player';
-import { ZONES } from '../world/Terrain';
 import { Synth, SYNTH_NAMES, type SynthName } from './Synth';
 import { Music } from './Music';
 import { Ambience, type WorldState } from './Ambience';
@@ -29,6 +29,9 @@ const FALLBACK: Record<string, SynthName> = {
   jingle_steel: 'blip',
   jingle_pizzi: 'blip',
 };
+
+/** The ground under the player, for footsteps. Beach is the sand band along the coast. */
+export type Surface = 'bridge' | 'paddy' | 'beach' | 'grass';
 
 const MUTE_KEY = 'nongkrong.audio';
 const SPATIAL_MAX = 45;
@@ -76,8 +79,10 @@ export class AudioManager {
   private listenerFwd = new THREE.Vector3(0, 0, -1);
   private listenerRight = new THREE.Vector3(1, 0, 0);
   private world: WorldState = { rain: 0, night: 0 };
-  /** True when a local (x, z) is on a bridge. Set by main, so footsteps can sound like wood. */
-  onBridge: (x: number, z: number) => boolean = () => false;
+  /** What the player stands on at a local (x, z) of the live island. Set by main. */
+  surfaceAt: (x: number, z: number) => Surface = () => 'grass';
+  /** Coast radius of the live island (m), for the ambience. Set by main on each island switch. */
+  coastR = 62;
   private lastPos = new THREE.Vector3();
   private hasLast = false;
   private speed = 0;
@@ -91,14 +96,14 @@ export class AudioManager {
     this.pill.id = 'audio-toggle';
     this.pill.className = 'audio-pill';
     this.pill.type = 'button';
-    this.pill.title = 'Sound on or off (M)';
+    this.pill.title = t('audio.title');
     this.pill.addEventListener('click', () => this.toggleMute());
     document.body.append(this.pill);
     this.syncPill();
 
     // Mention the shortcut in the existing HUD help line.
     const help = document.querySelector<HTMLElement>('#hud .help');
-    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''} · M — mute`;
+    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''}${t('help.mute')}`;
 
     const gesture = () => this.unlock();
     window.addEventListener('pointerdown', gesture);
@@ -180,7 +185,7 @@ export class AudioManager {
     if (!this.ctx) return;
     // Music is 30% quieter at night.
     this.musicBus?.gain.setTargetAtTime(0.35 * (1 - 0.3 * this.world.night), this.ctx.currentTime, 0.8);
-    this.ambience?.update(dt, player.position, this.world, this.onBridge(player.position.x, player.position.z));
+    this.ambience?.update(dt, player.position, this.world, this.surfaceAt(player.position.x, player.position.z) === 'bridge', this.coastR);
     this.updateFootsteps(dt, player);
   }
 
@@ -306,14 +311,14 @@ export class AudioManager {
     const running = this.speed > 5.5;
     this.stepTimer = running ? RUN_STEP : WALK_STEP;
 
-    const z = ZONES.paddy;
-    if (this.onBridge(p.x, p.z)) {
+    const surface = this.surfaceAt(p.x, p.z);
+    if (surface === 'bridge') {
       this.play('step_wood', { volume: running ? 0.7 : 0.55, rateJitter: 0.1 });
-    } else if (Math.abs(p.x - z.x) < z.w / 2 && Math.abs(p.z - z.z) < z.d / 2) {
+    } else if (surface === 'paddy') {
       // Paddy mud: a softer, slower step with a wet plop on top.
       this.play('step_grass', { volume: 0.45, rate: 0.8, rateJitter: 0.08 });
       this.play('plop', { volume: 0.2 });
-    } else if (Math.hypot(p.x, p.z) > 44 && p.y < 0.9) {
+    } else if (surface === 'beach' && p.y < 0.9) {
       this.play('step_sand', { volume: running ? 0.7 : 0.55, rateJitter: 0.1 });
     } else {
       this.play('step_grass', { volume: running ? 0.7 : 0.55, rateJitter: 0.1 });

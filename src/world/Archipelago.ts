@@ -1,97 +1,83 @@
-/** Grid of islands: COLS x ROWS cells, SPACING metres apart. Row grows toward the south (+z). */
-export const COLS = 5;
-export const ROWS = 10;
-export const SPACING = 180;
-export const START_CELL: Readonly<Cell> = { col: 2, row: 4 };
-
-export interface Cell {
-  col: number;
-  row: number;
-}
-
-export type Side = 'E' | 'W' | 'N' | 'S';
-
-/** Island number, 1..50, row by row. */
-export function islandId(cell: Cell): number {
-  return cell.row * COLS + cell.col + 1;
-}
+import { ISLANDS, MAIN_ID, NORMAL_COUNT, centreOf, islandAt, ownerOfCell, type IslandDef } from './Islands';
 
 /** Where the player crossed into a neighbour, and the offset to apply to their local position. */
 export interface ShiftInfo {
-  cell: Cell;
+  id: number;
   dx: number;
   dz: number;
 }
 
-const VISITED_KEY = 'nongkrong.visited';
+/** Visited islands, by the registry's ids. Version 2; version 1 stored ids of the old grid. */
+const VISITED_KEY = 'nongkrong.visited2';
+const LEGACY_VISITED_KEY = 'nongkrong.visited';
+/** The old grid was 5 columns wide; its ids were row * 5 + col + 1. */
+const LEGACY_COLS = 5;
 
 /**
- * The grid and the current island. Gameplay always works in the current island's local
- * coordinates; this class only knows which cell is live and who its neighbours are.
+ * The archipelago and the live island. Gameplay always works in the live island's local coordinates
+ * (origin at its centre). This class knows which island is live, which islands were visited, and when
+ * the player has crossed into a neighbour.
  */
 export class Archipelago {
-  cell: Cell = { ...START_CELL };
+  /** The live island's id. */
+  id: number = MAIN_ID;
   readonly visited = new Set<number>();
   /** Full island change (state, physics, visuals). Set by main. */
-  switchTo: (cell: Cell, x: number, z: number) => void = () => {};
-  private listeners = new Set<(cell: Cell) => void>();
+  switchTo: (id: number, x: number, z: number) => void = () => {};
+  private listeners = new Set<(id: number) => void>();
 
   constructor() {
     for (const id of loadVisited()) this.visited.add(id);
   }
 
-  get id(): number {
-    return islandId(this.cell);
+  /** The live island's definition. */
+  get def(): IslandDef {
+    return ISLANDS[this.id];
   }
 
+  /** Normal islands on the grid (the main island is not counted). */
   get total(): number {
-    return COLS * ROWS;
+    return NORMAL_COUNT;
   }
 
-  inGrid(col: number, row: number): boolean {
-    return col >= 0 && col < COLS && row >= 0 && row < ROWS;
-  }
-
-  /** The neighbouring cell on one side, or null when the grid ends there. */
-  neighbor(side: Side, cell: Cell = this.cell): Cell | null {
-    const col = cell.col + (side === 'E' ? 1 : side === 'W' ? -1 : 0);
-    const row = cell.row + (side === 'S' ? 1 : side === 'N' ? -1 : 0);
-    return this.inGrid(col, row) ? { col, row } : null;
-  }
-
-  hasNeighbor(side: Side, cell: Cell = this.cell): boolean {
-    return this.neighbor(side, cell) !== null;
-  }
-
-  /** Subscribes to cell changes. Returns an unsubscribe function. */
-  onChange(fn: (cell: Cell) => void): () => void {
+  /** Subscribes to island changes. Returns an unsubscribe function. */
+  onChange(fn: (id: number) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
 
-  /** Makes `cell` the live island, marks it visited and tells the listeners. Does not move anything physical. */
-  setCell(cell: Cell) {
-    this.cell = { col: cell.col, row: cell.row };
-    this.visited.add(this.id);
+  /** Makes `id` the live island, marks it visited and tells the listeners. Does not move anything physical. */
+  setCurrent(id: number) {
+    this.id = id;
+    this.visited.add(id);
     saveVisited(this.visited);
-    for (const fn of this.listeners) fn(this.cell);
+    for (const fn of this.listeners) fn(id);
   }
 
-  /** Checks the local position against the island edges. Returns a shift when the player has crossed into an existing neighbour. */
+  /**
+   * Checks the live island's local position against its region. When the player is standing on another
+   * island, returns that island and the offset that keeps the same world position in the new local frame.
+   * Empty water and the edge of the grid return null.
+   */
   shiftFor(x: number, z: number): ShiftInfo | null {
-    const h = SPACING / 2;
-    const { col, row } = this.cell;
-    if (x > h && this.hasNeighbor('E')) return { cell: { col: col + 1, row }, dx: -SPACING, dz: 0 };
-    if (x < -h && this.hasNeighbor('W')) return { cell: { col: col - 1, row }, dx: SPACING, dz: 0 };
-    if (z > h && this.hasNeighbor('S')) return { cell: { col, row: row + 1 }, dx: 0, dz: -SPACING };
-    if (z < -h && this.hasNeighbor('N')) return { cell: { col, row: row - 1 }, dx: 0, dz: SPACING };
-    return null;
+    const here = centreOf(this.id);
+    const there = islandAt(x + here.x, z + here.z);
+    if (!there || there.id === this.id) return null;
+    const next = centreOf(there.id);
+    return { id: there.id, dx: here.x - next.x, dz: here.z - next.z };
   }
 
   /** Dev helper: moves the player to that island's spawn with a full state save and load. */
+  teleportTo(id: number) {
+    if (!ISLANDS[id]) throw new Error(`No island with id ${id}`);
+    this.switchTo(id, 0, 0);
+  }
+
+  /** Dev helper: teleports to the island on a grid cell (the main island's block counts as its cells). */
   teleport(col: number, row: number) {
-    if (!this.inGrid(col, row)) throw new Error(`No island at col ${col}, row ${row}`);
-    this.switchTo({ col, row }, 0, 0);
+    const id = ownerOfCell(col, row);
+    if (id === null) throw new Error(`No island at col ${col}, row ${row}`);
+    this.teleportTo(id);
   }
 }
 
@@ -139,24 +125,43 @@ export class IslandStates {
     return out;
   }
 
-  /** Replaces the map from saved JSON. Anything malformed is skipped. */
-  load(raw: unknown) {
+  /**
+   * Replaces the map from saved JSON. Anything malformed is skipped. With `legacy`, the keys are ids of the
+   * old grid: each one maps to its cell, and only cells that are normal islands on the new grid are kept.
+   */
+  load(raw: unknown, legacy = false) {
     this.clear();
     if (!raw || typeof raw !== 'object') return;
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-      const id = Number(key);
+      const old = Number(key);
       const v = value as Partial<IslandState> | null;
-      if (Number.isInteger(id) && v && Array.isArray(v.trees) && v.paddy && Array.isArray(v.paddy.s)) {
-        this.map.set(id, v as IslandState);
-      }
+      if (!Number.isInteger(old) || !v || !Array.isArray(v.trees) || !v.paddy || !Array.isArray(v.paddy.s)) continue;
+      const id = legacy ? legacyId(old) : old;
+      if (id === null || !ISLANDS[id]) continue;
+      this.map.set(id, v as IslandState);
     }
   }
 }
 
+/** The new id for an id of the old grid, or null when that cell is not a normal island now. */
+function legacyId(oldId: number): number | null {
+  const col = (oldId - 1) % LEGACY_COLS;
+  const row = Math.floor((oldId - 1) / LEGACY_COLS);
+  const id = ownerOfCell(col, row);
+  return id !== null && id !== MAIN_ID ? id : null;
+}
+
 function loadVisited(): number[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(VISITED_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw.filter((n) => Number.isInteger(n)) : [];
+    const raw = localStorage.getItem(VISITED_KEY);
+    if (raw !== null) {
+      const list = JSON.parse(raw);
+      return Array.isArray(list) ? list.filter((n) => Number.isInteger(n) && ISLANDS[n]) : [];
+    }
+    // First run on version 2: carry over the normal islands visited on the old grid.
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_VISITED_KEY) ?? '[]');
+    if (!Array.isArray(legacy)) return [];
+    return legacy.map((n) => (Number.isInteger(n) ? legacyId(n) : null)).filter((n): n is number => n !== null);
   } catch {
     return [];
   }

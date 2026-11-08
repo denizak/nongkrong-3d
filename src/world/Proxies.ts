@@ -1,104 +1,86 @@
 import * as THREE from 'three/webgpu';
-import { SPACING, type Archipelago } from './Archipelago';
-import { bakeStatic } from './Bake';
+import { bakeStatic, type Baked } from './Bake';
+import { ISLANDS, centreOf, inProxyWindow, type IslandKind } from './Islands';
 
 /** Objects whose visibility or transform must follow the live island in each proxy. */
-const SYNC_NAMES = new Set(['torch-group', 'torch-flame', 'bridge-flames']);
-/** Paddy stalks and flowers are too heavy to copy eight times, so proxies drop them. */
+const SYNC_NAMES = new Set(['torch-group', 'torch-flame']);
+/** Paddy stalks and flowers are too heavy to copy for every proxy, so proxies drop them. */
 const STRIP_NAMES = new Set(['rice', 'vegetation']);
 
-/** The parts of the live island that proxies handle one by one, rather than baking. */
-export interface LiveParts {
-  /** The island group. Its other static scenery is baked once and shared by every proxy. */
-  island: THREE.Group;
-  terrain: THREE.Object3D;
-  /** Cloned per proxy, since each proxy shows its own bridges. */
-  bridges: THREE.Object3D;
-  /** Cloned per proxy and synced to the live torches every frame. */
+/** A kind's live content root, with the parts proxies handle one by one. */
+export interface LiveRoot {
+  root: THREE.Group;
+  terrain: THREE.Mesh;
   torches: THREE.Object3D;
 }
 
+/** Shared pieces of one island kind: the baked scenery, the terrain geometry and the torch template. */
+interface Template {
+  shared: Baked[];
+  terrainGeo: THREE.BufferGeometry;
+  terrainMat: THREE.Material;
+  live: LiveRoot;
+}
+
 interface Proxy {
-  dc: number;
-  dr: number;
   object: THREE.Group;
-  bridgeE: THREE.Object3D | null;
-  bridgeN: THREE.Object3D | null;
+  kind: IslandKind;
   /** [live, proxy] pairs of SYNC_NAMES objects, matched by traversal order. */
   pairs: Array<[THREE.Object3D, THREE.Object3D]>;
 }
 
 /**
- * Static copies of the live island at the eight surrounding grid offsets. Each one is shown only
- * when its cell exists. Proxies cast no shadows, have no point lights and skip rice and flowers.
- * The island's props, paddy and scarecrow are baked into a few meshes once, and all proxies share
- * that geometry, so each proxy costs only a handful of draw calls.
+ * Static copies of the other islands near the live one (within PROXY_RANGE of its centre). Each island
+ * kind is baked once, and all proxies of that kind share the geometry. A proxy is shown only while its
+ * island is in range, and it is placed at (its centre minus the live centre). Proxies cast no shadows and
+ * have no point lights; they skip rice and flowers.
  */
 export class Proxies {
-  private items: Proxy[] = [];
+  private items = new Map<number, Proxy>();
+  private templates: Record<IslandKind, Template>;
 
-  constructor(scene: THREE.Scene, live: LiveParts) {
-    const shared = bakeStatic(
-      live.island,
-      (o) =>
-        o === live.terrain || o === live.bridges || o === live.torches ||
-        SYNC_NAMES.has(o.name) || STRIP_NAMES.has(o.name),
-    );
-    const liveSync = [...collectNamed(live.bridges), ...collectNamed(live.torches)];
-
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        if (dc === 0 && dr === 0) continue;
-        const object = new THREE.Group();
-        object.name = `proxy ${dc},${dr}`;
-        object.position.set(dc * SPACING, 0, dr * SPACING);
-
-        for (const s of shared) object.add(new THREE.Mesh(s.geometry, s.material));
-        const terrain = live.terrain.clone();
-        const bridges = live.bridges.clone(true);
-        const torches = live.torches.clone(true);
-
-        const lights: THREE.Light[] = [];
-        torches.traverse((o) => {
-          if ((o as THREE.Light).isLight) lights.push(o as THREE.Light);
-        });
-        for (const l of lights) l.removeFromParent();
-        object.add(terrain, bridges, torches);
-        object.traverse((o) => {
-          if ((o as THREE.Mesh).isMesh) o.castShadow = false;
-        });
-
-        const cloneSync = [...collectNamed(bridges), ...collectNamed(torches)];
-        const pairs = liveSync.map((live, i) => [live, cloneSync[i]] as [THREE.Object3D, THREE.Object3D]);
-        scene.add(object);
-        this.items.push({
-          dc, dr, object,
-          bridgeE: bridges.getObjectByName('bridgeE') ?? null,
-          bridgeN: bridges.getObjectByName('bridgeN') ?? null,
-          pairs,
-        });
-      }
-    }
+  constructor(
+    private scene: THREE.Scene,
+    roots: Record<IslandKind, LiveRoot>,
+  ) {
+    const bake = (live: LiveRoot): Template => {
+      const shared = bakeStatic(
+        live.root,
+        (o) => o === live.terrain || o === live.torches || SYNC_NAMES.has(o.name) || STRIP_NAMES.has(o.name),
+      );
+      return { shared, terrainGeo: live.terrain.geometry, terrainMat: live.terrain.material as THREE.Material, live };
+    };
+    this.templates = { normal: bake(roots.normal), main: bake(roots.main) };
   }
 
+  /** Number of proxies created so far (shown or hidden). */
   get count(): number {
-    return this.items.length;
+    return this.items.size;
   }
 
-  /** Cell change: show only the proxies whose cell exists, and each one's own bridges where the next cell exists. */
-  onCell(arch: Archipelago) {
-    for (const p of this.items) {
-      const col = arch.cell.col + p.dc;
-      const row = arch.cell.row + p.dr;
-      p.object.visible = arch.inGrid(col, row);
-      if (p.bridgeE) p.bridgeE.visible = arch.inGrid(col + 1, row);
-      if (p.bridgeN) p.bridgeN.visible = arch.inGrid(col, row - 1);
+  /** Number of proxies currently shown. */
+  get visibleCount(): number {
+    let n = 0;
+    for (const p of this.items.values()) if (p.object.visible) n++;
+    return n;
+  }
+
+  /** Live island changed: show the islands in range, placed relative to the new live centre. */
+  update(current: number) {
+    const here = centreOf(current);
+    for (const def of ISLANDS) {
+      if (def.id === current) continue;
+      const inRange = inProxyWindow(current, def.id);
+      if (!inRange && !this.items.has(def.id)) continue;
+      const proxy = this.items.get(def.id) ?? this.make(def.id);
+      proxy.object.visible = inRange;
+      if (inRange) proxy.object.position.set(def.centerWorld.x - here.x, 0, def.centerWorld.z - here.z);
     }
   }
 
-  /** Per frame: copy the live torch and bridge lantern state into the visible proxies. */
+  /** Per frame: copy the live torch state into the visible proxies. */
   sync() {
-    for (const p of this.items) {
+    for (const p of this.items.values()) {
       if (!p.object.visible) continue;
       for (const [live, copy] of p.pairs) {
         copy.visible = live.visible;
@@ -106,6 +88,33 @@ export class Proxies {
         copy.scale.copy(live.scale);
       }
     }
+  }
+
+  private make(id: number): Proxy {
+    const kind = ISLANDS[id].kind;
+    const t = this.templates[kind];
+    const object = new THREE.Group();
+    object.name = `proxy ${id}`;
+    for (const s of t.shared) object.add(new THREE.Mesh(s.geometry, s.material));
+    const terrain = new THREE.Mesh(t.terrainGeo, t.terrainMat);
+    const torches = t.live.torches.clone(true);
+    const lights: THREE.Light[] = [];
+    torches.traverse((o) => {
+      if ((o as THREE.Light).isLight) lights.push(o as THREE.Light);
+    });
+    for (const l of lights) l.removeFromParent();
+    object.add(terrain, torches);
+    object.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) o.castShadow = false;
+    });
+
+    const liveSync = collectNamed(t.live.torches);
+    const copySync = collectNamed(torches);
+    const pairs = liveSync.map((live, i) => [live, copySync[i]] as [THREE.Object3D, THREE.Object3D]);
+    this.scene.add(object);
+    const proxy: Proxy = { object, kind, pairs };
+    this.items.set(id, proxy);
+    return proxy;
   }
 }
 

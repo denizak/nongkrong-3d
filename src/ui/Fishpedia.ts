@@ -1,4 +1,5 @@
-import { SPECIES, type Species, type WaterKind } from '../interact/FishSpecies';
+import { SPECIES, speciesName, type Species, type WaterKind } from '../interact/FishSpecies';
+import { t } from '../i18n';
 import { sfx } from '../audio/AudioManager';
 
 const KEY = 'nongkrong.fishpedia';
@@ -57,7 +58,7 @@ export class Fishpedia {
 
   showCatch(text: string, isNew: boolean) {
     this.card.replaceChildren(el('div', 'headline', text));
-    if (isNew) this.card.append(el('div', 'sub', 'New in your Fishpedia!'));
+    if (isNew) this.card.append(el('div', 'sub', t('pedia.new')));
     this.card.classList.add('show');
     clearTimeout(this.cardTimer);
     this.cardTimer = window.setTimeout(() => this.card.classList.remove('show'), CARD_TIME * 1000);
@@ -65,18 +66,18 @@ export class Fishpedia {
 
   private render() {
     const sections: [string, WaterKind][] = [
-      ['Pond', 'pond'],
-      ['Sea', 'sea'],
+      [t('pedia.pond'), 'pond'],
+      [t('pedia.sea'), 'sea'],
     ];
-    const nodes: HTMLElement[] = [el('h2', '', 'Fishpedia')];
+    const nodes: HTMLElement[] = [el('h2', '', t('pedia.title'))];
     for (const [label, water] of sections) {
       nodes.push(el('h3', '', label));
       for (const s of SPECIES.filter((sp) => sp.water === water)) {
         const e = this.entries[s.id];
         const row = el('div', 'row');
         row.append(
-          el('span', '', e ? `${s.emoji} ${s.name}` : '❔ ???'),
-          el('span', e ? 'info' : 'info unknown', e ? `×${e.count} · biggest ${e.biggest} cm` : 'not caught yet'),
+          el('span', '', e ? `${s.emoji} ${speciesName(s)}` : '❔ ???'),
+          el('span', e ? 'info' : 'info unknown', e ? t('pedia.stats', { count: e.count, cm: e.biggest }) : t('pedia.unknown')),
         );
         nodes.push(row);
       }

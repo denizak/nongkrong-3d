@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type { Physics } from '../core/Physics';
-import { ZONES, type Terrain } from './Terrain';
+import type { ShapeSpec, Terrain } from './Terrain';
 import type { Props } from './Props';
 import { MeshBaker } from './Bake';
 
@@ -60,7 +60,7 @@ export class Torches {
 
   private t = 0;
 
-  constructor(scene: THREE.Object3D, terrain: Terrain, physics: Physics, props: Props) {
+  constructor(scene: THREE.Object3D, terrain: Terrain, physics: Physics, props: Props, spec: ShapeSpec) {
     this.group.name = 'torch-group';
     scene.add(this.group);
     const { ColliderDesc } = physics.RAPIER;
@@ -83,7 +83,7 @@ export class Torches {
     const innerMat = new THREE.MeshBasicMaterial({ color: FLAME_INNER, transparent: true, depthWrite: false, opacity: 0 });
     const glowTex = makeGlowTexture();
 
-    for (const [x, z] of this.spots(terrain, physics, props)) {
+    for (const [x, z] of this.spots(terrain, physics, props, spec)) {
       const y = terrain.heightAt(x, z);
       const root = new THREE.Group();
       root.name = 'torch';
@@ -171,15 +171,16 @@ export class Torches {
   }
 
   /** Finds the spots: spawn ring, paddy gap, pond shore, orchard edge, scarecrow. Nudges each toward spawn until valid. */
-  private spots(terrain: Terrain, physics: Physics, props: Props): Array<[number, number]> {
-    const { spawn, pond, paddy } = ZONES;
-    const ORCHARD = { x: -14, z: 12 };
+  private spots(terrain: Terrain, physics: Physics, props: Props, spec: ShapeSpec): Array<[number, number]> {
+    const { spawn, pond, paddy } = spec.zones;
+    const ORCHARD = spec.orchard;
+    const K = spec.scale;
     const raw: Array<[number, number]> = [];
 
     // 4 around the spawn clearing, loose ring.
     for (let i = 0; i < 4; i++) {
       const a = Math.PI / 4 + (i * Math.PI) / 2;
-      raw.push([spawn.x + Math.cos(a) * 6, spawn.z + Math.sin(a) * 6]);
+      raw.push([spawn.x + Math.cos(a) * 6 * K, spawn.z + Math.sin(a) * 6 * K]);
     }
     // 2 flanking the paddy's dike gap on the east side (gap is centred on paddy.z, 2 m wide).
     const eastX = paddy.x + paddy.w / 2 + 0.7;
@@ -194,7 +195,7 @@ export class Torches {
     const orchardAngle = Math.atan2(spawn.z - ORCHARD.z, spawn.x - ORCHARD.x);
     for (const d of [-0.3, 0.3]) {
       const a = orchardAngle + d;
-      raw.push([ORCHARD.x + Math.cos(a) * 8, ORCHARD.z + Math.sin(a) * 8]);
+      raw.push([ORCHARD.x + Math.cos(a) * ORCHARD.r * 1.33, ORCHARD.z + Math.sin(a) * ORCHARD.r * 1.33]);
     }
     // 1 near the scarecrow.
     const sc = props.scarecrow.position;

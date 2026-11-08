@@ -1,16 +1,16 @@
+import { t } from './i18n';
 import * as THREE from 'three/webgpu';
 import { Input } from './core/Input';
-import { Terrain } from './world/Terrain';
+import { Terrains, LiveGround } from './world/Terrains';
 import { Environment } from './world/Environment';
 import { DayNight } from './world/DayNight';
 import { Weather } from './world/Weather';
 import { NATURE_MODELS, loadNatureAssets } from './world/Assets';
-import { addProps } from './world/Props';
-import { addVegetation } from './world/Vegetation';
-import { Torches } from './world/Torches';
-import { Archipelago, IslandStates, START_CELL, type Cell, type IslandState } from './world/Archipelago';
+import { buildIslandContent, type IslandContent } from './world/IslandContent';
+import { Archipelago, IslandStates, type IslandState } from './world/Archipelago';
 import { Bridges } from './world/Bridges';
 import { Proxies } from './world/Proxies';
+import { MAIN_ID, ISLAND_COUNT, islandById, type IslandKind } from './world/Islands';
 import { IslandPill } from './ui/IslandPill';
 import { Player } from './player/Player';
 import { CameraRig } from './player/CameraRig';
@@ -19,30 +19,24 @@ import { Physics } from './core/Physics';
 import { Inventory } from './ui/Inventory';
 import { Pickups } from './interact/Pickups';
 import { InteractionSystem } from './interact/InteractionSystem';
-import { FruitTree } from './interact/FruitTree';
 import { FishingSpot } from './interact/FishingSpot';
 import { Fishpedia } from './ui/Fishpedia';
 import { ChatBubble } from './ui/ChatBubble';
-import { PaddyField, inPaddy, MUD_SPEED } from './interact/PaddyField';
+import { inPaddyZone, MUD_SPEED } from './interact/PaddyField';
 import { Birds } from './interact/Birds';
-import { Scarecrow } from './interact/Scarecrow';
 import { PRONE, SIT } from './player/CharacterModel';
-import { sfx } from './audio/AudioManager';
+import { sfx, type Surface } from './audio/AudioManager';
 import { Loading } from './ui/Loading';
 import { Save } from './core/Save';
 import { TouchControls } from './ui/TouchControls';
 import { LookControls } from './player/LookControls';
+import { Net } from './net/Net';
+import { RemotePlayers } from './net/RemotePlayers';
+import { NetPill } from './net/NetPill';
 
 const NO_MOVE = { x: 0, y: 0 };
-
-/** The 3x3 existence mask around a cell, row-major from the north-west corner (dz = -1 first). */
-function neighbourhood(arch: Archipelago): boolean[] {
-  const out: boolean[] = [];
-  for (let dz = -1; dz <= 1; dz++) {
-    for (let dx = -1; dx <= 1; dx++) out.push(arch.inGrid(arch.cell.col + dx, arch.cell.row + dz));
-  }
-  return out;
-}
+/** Beach is the sand band: beyond this share of the coast radius (and low ground). */
+const BEACH_FROM = 0.71;
 
 /**
  * Dev helper: counts the visible draw-call sources (Mesh, InstancedMesh, Sprite, Points, Line) in the
@@ -81,7 +75,7 @@ async function boot() {
   const forceWebGL = params.has('webgl');
   const maxPixelRatio = params.has('hq') ? 2 : 1.5;
   const loading = new Loading();
-  loading.setProgress(0.05, 'Starting renderer');
+  loading.setProgress(0.05, t('loading.renderer'));
   const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -91,52 +85,43 @@ async function boot() {
   renderer.toneMappingExposure = 1.05;
   await renderer.init();
   container.appendChild(renderer.domElement);
-  loading.setProgress(0.1, 'Loading physics and terrain');
+  loading.setProgress(0.1, t('loading.physics'));
 
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
-  backendLabel.textContent = `Renderer: ${isWebGPU ? 'WebGPU' : 'WebGL 2 (fallback)'}`;
+  backendLabel.textContent = t('backend.renderer', { name: isWebGPU ? 'WebGPU' : t('backend.fallback') });
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
 
   // Rapier loads in its own chunk, in parallel with the models.
   const physicsReady = Physics.create().then((p) => {
-    loading.setProgress(0.25, 'Physics ready');
+    loading.setProgress(0.25, t('loading.physicsReady'));
     return p;
   });
 
-  // Everything static on the live island lives under islandRoot, so the proxies can clone it.
-  // The island is always at the local origin; the player's position stays local to it.
-  const terrain = new Terrain();
-  const islandRoot = new THREE.Group();
-  islandRoot.name = 'island';
-  scene.add(islandRoot);
-  islandRoot.add(terrain.mesh);
-  const env = new Environment(scene, terrain);
-  const daynight = new DayNight(scene, env, terrain, renderer);
-  const weather = new Weather(scene, terrain);
+  // Terrains for both kinds, built once. The live ground follows the live island's terrain.
+  // The game starts on the main island.
+  const terrains = new Terrains();
+  const ground = new LiveGround(terrains.main);
+  const env = new Environment(scene, terrains.heightAtWorld);
+  const daynight = new DayNight(scene, env, ground, renderer);
+  const weather = new Weather(scene, ground);
 
   const modelTotal = NATURE_MODELS.length + 1;
   let modelsDone = 0;
   const onModelLoaded = () => {
     modelsDone++;
-    loading.setProgress(0.3 + (0.45 * modelsDone) / modelTotal, `Loading models (${modelsDone}/${modelTotal})`);
+    loading.setProgress(0.3 + (0.45 * modelsDone) / modelTotal, t('loading.models', { done: modelsDone, total: modelTotal }));
   };
   const [physics, assets, model] = await Promise.all([
     physicsReady,
     loadNatureAssets(onModelLoaded),
     CharacterModel.load(onModelLoaded),
   ]);
-  physics.addTerrain(terrain.mesh);
 
-  loading.setProgress(0.78, 'Building the world');
-  const bridges = new Bridges(islandRoot, terrain, physics);
-  const corridor = (x: number, z: number) => bridges.inCorridor(x, z);
-  const props = addProps(islandRoot, terrain, physics, assets, corridor);
-  addVegetation(islandRoot, terrain, assets, corridor);
-  const torches = new Torches(islandRoot, terrain, physics, props);
-
-  const player = new Player(terrain, physics, model, (x, z) => bridges.onBridge(x, z));
+  loading.setProgress(0.78, t('loading.world'));
+  const bridges = new Bridges(scene, terrains, physics);
+  const player = new Player(ground, physics, model, (x, z) => bridges.onBridge(x, z));
   scene.add(player.object);
 
   const rig = new CameraRig(camera, physics);
@@ -144,90 +129,125 @@ async function boot() {
   const chat = new ChatBubble(camera, player, input);
 
   const inventory = new Inventory();
-  const pickups = new Pickups(scene, terrain, inventory);
-  loading.setProgress(0.9, 'Almost there');
+  const pickups = new Pickups(scene, ground, inventory);
+  const birds = new Birds(scene);
+
+  // Build each island kind once. Each build sees only its own colliders.
+  const contents = {} as Record<IslandKind, IslandContent>;
+  for (const kind of ['normal', 'main'] as const) {
+    physics.setActiveTags(new Set([kind]));
+    contents[kind] = buildIslandContent(kind, {
+      terrains, physics, assets, scene, player, inventory, camera, birds, bridges,
+    }, physics);
+  }
+  loading.setProgress(0.9, t('loading.almost'));
+
   const interactions = new InteractionSystem(input, player, { pickups });
-  const trees = props.fruitTrees.map((tree) => new FruitTree(tree));
-  for (const tree of trees) interactions.add(tree);
 
   // Hand bone for the rod, found by name so the character model code stays untouched.
   const hand = model?.root.getObjectByName('Palm2R') ?? model?.root.getObjectByName('Palm2.R') ?? null;
   const fishpedia = new Fishpedia();
   const fishing = new FishingSpot({
-    scene, camera, terrain, player, inventory, pedia: fishpedia, hand,
+    scene, camera, terrain: ground, player, inventory, pedia: fishpedia, hand,
     onBridge: (x, z) => bridges.onBridge(x, z),
   });
   interactions.add(fishing);
-
-  // Rice paddy, birds and the scarecrow. Their update() runs with the interaction loop.
-  const paddy = new PaddyField({ scene: islandRoot, terrain, assets, player, inventory, avoid: props.scarecrow.position });
-  const birds = new Birds(scene);
-  const scarecrow = new Scarecrow({ group: props.scarecrow, camera, birds });
-  interactions.add(paddy);
-  interactions.add(scarecrow);
   // Robot looks: the loading card, K to reroll, and the touch dice button.
   const look = new LookControls({ model, input, inventory, loading });
 
   // Touch joystick, camera drag and buttons. Does nothing on non-touch devices.
   const touch = new TouchControls({ input, fishpedia, chat });
 
-  // The grid, the proxies and the island switch. Proxies are cloned now, when the island is fully built.
+  // Multiplayer: presence and chat over WebRTC. Trystero loads when the game starts. ?solo turns it off.
+  const net = new Net(() => look.current, { solo: params.has('solo') });
+  const remotes = new RemotePlayers(scene, net);
+  loading.addNameField(net.name, (raw) => net.setName(raw) ?? net.name);
+  chat.onSend = (text) => net.sendChat(text);
+  chat.onName = (arg) => {
+    const name = net.setName(arg);
+    inventory.toast(name ? t('name.set', { name }) : t('name.usage'));
+  };
+
+  // The island switch. Proxies are built from the baked kinds, now that every island is fully built.
   const archipelago = new Archipelago();
   const islands = new IslandStates();
-  const proxies = new Proxies(scene, { island: islandRoot, terrain: terrain.mesh, bridges: bridges.root, torches: torches.group });
+  const proxies = new Proxies(scene, {
+    normal: { root: contents.normal.root, terrain: contents.normal.terrain.mesh, torches: contents.normal.torches.group },
+    main: { root: contents.main.root, terrain: contents.main.terrain.mesh, torches: contents.main.torches.group },
+  });
   new IslandPill(archipelago);
-  sfx.onBridge = (x, z) => bridges.onBridge(x, z);
+  const netPill = new NetPill(net, archipelago);
 
-  archipelago.onChange((cell) => {
-    proxies.onCell(archipelago);
-    bridges.applyCell(cell, archipelago);
-    env.setIslandMask(neighbourhood(archipelago));
-  });
-
-  const captureLive = (): IslandState => ({
-    trees: trees.map((t) => t.getState()),
-    paddy: paddy.getState(),
-  });
-
+  /** The live island's content. Set by enterIsland; the main island until the first switch. */
+  let live: IslandContent = contents.main;
   // True once the first island is placed; before that there is no live progress to store.
   let booted = false;
 
+  const captureLive = (): IslandState => ({
+    trees: live.fruitTrees.map((tree) => tree.getState()),
+    paddy: live.paddy.getState(),
+  });
+
+  sfx.surfaceAt = (x, z): Surface => {
+    if (bridges.onBridge(x, z)) return 'bridge';
+    if (inPaddyZone(live.zones.paddy, x, z)) return 'paddy';
+    if (Math.hypot(x, z) > BEACH_FROM * live.coastR && ground.heightAt(x, z) < 0.9) return 'beach';
+    return 'grass';
+  };
+
   /**
-   * Switches the live island. Stores the old island's progress, changes the cell (proxies, bridges and
-   * the water mask follow), loads the new island's progress and moves the player. With `shift`, the
-   * player keeps their place on the island and only the local frame moves by that offset.
+   * Switches the live island. Stores the old island's progress, makes the new kind's content live (roots,
+   * colliders, ground, interaction, birds, fishing), loads the new island's progress and moves the player.
+   * With `shift`, the player keeps their place on the island and only the local frame moves by that offset.
    */
   const enterIsland = (
-    cell: Cell,
-    x: number,
-    z: number,
-    heading: number,
-    opts: { shift?: { dx: number; dz: number }; capture?: boolean } = {},
+    id: number,
+    opts: { shift?: { dx: number; dz: number }; x?: number; z?: number; heading?: number; capture?: boolean } = {},
   ) => {
+    const def = islandById(id)!;
     if (opts.capture ?? booted) islands.set(archipelago.id, captureLive());
-    archipelago.setCell(cell);
-    const saved = islands.get(archipelago.id);
-    trees.forEach((t, i) => t.setState(saved?.trees[i]));
-    paddy.setState(saved?.paddy);
 
+    const next = contents[def.kind];
+    live = next;
+    archipelago.setCurrent(id);
+    contents.normal.root.visible = def.kind === 'normal';
+    contents.main.root.visible = def.kind === 'main';
+    ground.active = next.terrain;
+    physics.setActiveTags(new Set([def.kind]));
+    physics.terrainCollider = next.terrainCollider;
+    interactions.setActive(next.interactables);
+    birds.setIsland(next.zones);
+    fishing.setZones(next.zones);
+    daynight.setIsland(next.zones, next.spec.orchard);
+    sfx.coastR = next.coastR;
+
+    const saved = islands.get(id);
+    next.fruitTrees.forEach((tree, i) => tree.setState(saved?.trees[i]));
+    next.paddy.setState(saved?.paddy);
+
+    // Bridges first: the placement check below asks whether the spot is on a bridge.
+    bridges.applyIsland(id);
     if (opts.shift) {
       player.shiftBy(opts.shift.dx, opts.shift.dz);
       rig.shift(opts.shift.dx, opts.shift.dz);
     } else {
+      const x = opts.x ?? 0;
+      const z = opts.z ?? 0;
       const ok = player.isWalkable(x, z);
-      player.place(ok ? x : 0, ok ? z : 0, heading);
+      player.place(ok ? x : 0, ok ? z : 0, opts.heading ?? 0);
     }
 
     // Anything in local coordinates that belongs to the old island goes away.
     pickups.clear();
-    birds.clear();
     fishing.abort();
     weather.clearRipples();
-    paddy.clearTransients();
+    next.paddy.clearTransients();
     sfx.resetFootsteps();
+    proxies.update(id);
+    env.setWindow(def.centerWorld.x, def.centerWorld.z);
   };
-  archipelago.switchTo = (cell, x, z) => {
-    enterIsland(cell, x, z, 0);
+  archipelago.switchTo = (id, x, z) => {
+    enterIsland(id, { x, z, heading: 0 });
     rig.snapTo(player.position);
   };
 
@@ -237,14 +257,14 @@ async function boot() {
     archipelago,
     islands,
     captureLive: () => islands.set(archipelago.id, captureLive()),
-    enter: (cell, x, z, heading) => enterIsland(cell, x, z, heading),
+    enter: (id, x, z, heading) => enterIsland(id, { x, z, heading }),
     newGame: () => {
       islands.clear();
-      enterIsland(START_CELL, 0, 0, 0, { capture: false });
+      enterIsland(MAIN_ID, { capture: false });
       rig.snapTo(player.position);
     },
   });
-  if (!save.restore()) enterIsland(START_CELL, 0, 0, 0);
+  if (!save.restore()) enterIsland(MAIN_ID, { x: 0, z: 0, heading: 0 });
   booted = true;
   rig.snapTo(player.position);
   save.start();
@@ -253,10 +273,18 @@ async function boot() {
   if (import.meta.env.DEV)
     Object.assign(window, {
       game: {
-        player, rig, terrain, camera, physics, props, interactions, inventory, trees, pickups, prone: PRONE, sit: SIT,
-        fishing, fishpedia, chat, paddy, scarecrow, birds, torches, audio: sfx, save, loading, touch, daynight, weather,
-        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look,
-        renderer, debugDrawStats: () => drawStats(scene, renderer),
+        player, rig, camera, physics, interactions, inventory, pickups, prone: PRONE, sit: SIT,
+        fishing, fishpedia, chat, birds, audio: sfx, save, loading, touch, daynight, weather,
+        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes,
+        renderer, debugDrawStats: () => drawStats(scene, renderer), islandCount: ISLAND_COUNT,
+        contents, terrains, ground, env,
+        /** The live island's content: trees, paddy, props, torches, terrain, scarecrow. */
+        get live() { return live; },
+        get trees() { return live.fruitTrees; },
+        get paddy() { return live.paddy; },
+        get props() { return live.props; },
+        get torches() { return live.torches; },
+        get terrain() { return live.terrain; },
       },
     });
 
@@ -281,6 +309,7 @@ async function boot() {
   void loading.ready().then(() => {
     started = true;
     touch.showHint();
+    void net.start();
   });
 
   const timer = new THREE.Timer();
@@ -295,13 +324,13 @@ async function boot() {
       if (input.consumeLie()) player.togglePose('lie');
       // Fishing holds the player still until the line is reeled in.
       const move = input.move();
-      player.speedMultiplier = inPaddy(player.position.x, player.position.z) ? MUD_SPEED : 1;
+      player.speedMultiplier = inPaddyZone(live.zones.paddy, player.position.x, player.position.z) ? MUD_SPEED : 1;
       player.update(dt, fishing.locked ? NO_MOVE : move, input.running(), rig.basis());
       physics.step(dt);
       player.sync();
-      // Crossing an edge into an existing neighbour: move the local frame by one spacing.
+      // Floating origin: crossing into another island's region moves the local frame onto that island.
       const shift = archipelago.shiftFor(player.position.x, player.position.z);
-      if (shift) enterIsland(shift.cell, 0, 0, 0, { shift: { dx: shift.dx, dz: shift.dz } });
+      if (shift) enterIsland(shift.id, { shift: { dx: shift.dx, dz: shift.dz } });
       fishing.tick(dt, move);
       interactions.update(dt);
       birds.update(dt, player.position);
@@ -309,12 +338,27 @@ async function boot() {
       rig.update(player.position, input.consumeLook(), dt);
       sfx.update(dt, player, camera);
       chat.update();
+      // Presence: send my state, then draw the others around my island.
+      net.tick(dt, {
+        island: archipelago.id,
+        x: player.position.x,
+        y: player.position.y,
+        z: player.position.z,
+        heading: player.headingAngle,
+        speed: player.currentSpeed,
+        pose: player.pose,
+        fishing: fishing.locked,
+      });
+      remotes.update(dt, camera, { island: archipelago.id, pos: player.position });
     }
+    netPill.update(dt);
     env.update(player.position, t);
     daynight.update(dt, player.position, weather.rainAmount);
     weather.update(dt, player.position, daynight.hoursThisFrame);
     sfx.setWorld(weather.rainAmount, daynight.nightFactor);
-    torches.update(dt, daynight.nightFactor);
+    // Both kinds keep their torches ticking, so the proxies of the other kind stay in step.
+    contents.normal.torches.update(dt, daynight.nightFactor);
+    contents.main.torches.update(dt, daynight.nightFactor);
     bridges.update(daynight.nightFactor);
     proxies.sync();
 
@@ -325,7 +369,7 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
-  const message = `Failed to start: ${err?.message ?? err}`;
+  const message = t('backend.failed', { msg: String(err?.message ?? err) });
   document.getElementById('backend')!.textContent = message;
   new Loading().fail(message);
 });

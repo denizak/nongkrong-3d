@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import type { Terrain } from '../world/Terrain';
+import type { Ground } from '../world/Terrain';
 import type { Inventory } from '../ui/Inventory';
 import { sfx } from '../audio/AudioManager';
 
@@ -31,7 +31,7 @@ export class Pickups {
 
   constructor(
     private scene: THREE.Scene,
-    private terrain: Terrain,
+    private terrain: Ground,
     private inventory: Inventory,
   ) {}
 

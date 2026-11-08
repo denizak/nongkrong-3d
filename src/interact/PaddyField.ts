@@ -1,5 +1,6 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
-import { ZONES, mulberry32, type Terrain } from '../world/Terrain';
+import { mulberry32, type Terrain, type Zones } from '../world/Terrain';
 import type { NatureAssets } from '../world/Assets';
 import type { Player } from '../player/Player';
 import type { Inventory } from '../ui/Inventory';
@@ -7,8 +8,6 @@ import type { Interactable } from './Interactable';
 import type { PaddyState } from '../world/Archipelago';
 import { sfx } from '../audio/AudioManager';
 
-const PADDY = ZONES.paddy;
-const WATER_Y = PADDY.h + 0.06;
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -47,15 +46,17 @@ const _qYaw = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
 const _c = new THREE.Color();
 
-/** True when (x, z) is inside the paddy rectangle. */
-export function inPaddy(x: number, z: number) {
-  return Math.abs(x - PADDY.x) < PADDY.w / 2 && Math.abs(z - PADDY.z) < PADDY.d / 2;
+/** True when (x, z) is inside a paddy rectangle (the live island's paddy zone). */
+export function inPaddyZone(paddy: Zones['paddy'], x: number, z: number) {
+  return Math.abs(x - paddy.x) < paddy.w / 2 && Math.abs(z - paddy.z) < paddy.d / 2;
 }
 
 export interface PaddyDeps {
   /** Where the paddy's visuals go (the island root, so proxies can clone them). */
   scene: THREE.Object3D;
   terrain: Terrain;
+  /** The island's zones; the paddy rectangle is read from here. */
+  zones: Zones;
   assets: NatureAssets;
   player: Player;
   inventory: Inventory;
@@ -110,7 +111,7 @@ export class PaddyField implements Interactable {
     this.buildWater();
 
     const rand = mulberry32(99);
-    const { x: px, z: pz, w, d } = PADDY;
+    const { x: px, z: pz, w, d } = deps.zones.paddy;
     const spots: { x: number; y: number; z: number; yaw: number }[] = [];
     for (let x = px - w / 2 + 1; x <= px + w / 2 - 1; x += 0.8) {
       for (let z = pz - d / 2 + 1; z <= pz + d / 2 - 1; z += 0.8) {
@@ -199,7 +200,7 @@ export class PaddyField implements Interactable {
   }
 
   prompt(): string | null {
-    return this.target >= 0 ? 'Harvest rice' : null;
+    return this.target >= 0 ? t('prompt.harvest') : null;
   }
 
   /** Cuts the 4–8 nearest ripe stalks in front of the player. */
@@ -388,14 +389,14 @@ export class PaddyField implements Interactable {
 
   /** Muddy-teal water over the paddy, and low brown-green dikes around it (visual only, no colliders). */
   private buildWater() {
-    const { x, z, w, d, h } = PADDY;
+    const { x, z, w, d, h } = this.deps.zones.paddy;
     const water = new THREE.Mesh(
       new THREE.PlaneGeometry(w - 1, d - 1).rotateX(-Math.PI / 2),
       new THREE.MeshStandardMaterial({
         color: '#4f7f78', transparent: true, opacity: 0.72, roughness: 0.3, metalness: 0, flatShading: true,
       }),
     );
-    water.position.set(x, WATER_Y, z);
+    water.position.set(x, h + 0.06, z);
     water.receiveShadow = true;
     this.group.add(water);
 

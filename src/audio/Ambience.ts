@@ -1,9 +1,13 @@
 import * as THREE from 'three/webgpu';
 import type { Synth } from './Synth';
 
-/** Ocean waves, breeze and distant birds. Loudness follows the player's distance from the middle of the island, and is at the coast's full level on a bridge. */
-const COAST_NEAR = 35;
-const COAST_FAR = 60;
+/**
+ * Ocean waves, breeze and distant birds. Loudness follows the player's distance from the middle of the island,
+ * measured against the island's coast radius, and is at the coast's full level on a bridge.
+ */
+/** Fractions of the coast radius where the waves start to rise and reach full level. */
+const COAST_NEAR = 0.56;
+const COAST_FAR = 0.97;
 const WAVE_INLAND = 0.12;
 const BIRD_RANGE: [number, number] = [12, 30];
 const CRICKETS = 3;
@@ -116,10 +120,12 @@ export class Ambience {
   }
 
   /** Called per frame with the player's position. `onBridge` is true on a bridge, where the sea is always close. */
-  update(dt: number, player: THREE.Vector3, world: WorldState, onBridge = false) {
+  update(dt: number, player: THREE.Vector3, world: WorldState, onBridge = false, coastR = 62) {
     if (!this.started || !this.waves || !this.breeze || !this.rain || !this.hiss || !this.cricketBus) return;
     const d = Math.hypot(player.x, player.z);
-    this.coast = onBridge ? 1 : smooth(THREE.MathUtils.clamp((d - COAST_NEAR) / (COAST_FAR - COAST_NEAR), 0, 1));
+    const near = COAST_NEAR * coastR;
+    const far = COAST_FAR * coastR;
+    this.coast = onBridge ? 1 : smooth(THREE.MathUtils.clamp((d - near) / (far - near), 0, 1));
     const now = this.ctx.currentTime;
 
     // Wave swell: a slow sine whose period is re-picked every cycle.

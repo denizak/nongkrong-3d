@@ -1,7 +1,9 @@
-import { ROWS, COLS, type Archipelago } from '../world/Archipelago';
+import { t } from '../i18n';
+import { MAIN_ID } from '../world/Islands';
+import type { Archipelago } from '../world/Archipelago';
 
 /**
- * "🏝️ Island 12 / 50 · 7 visited". Sits in the top-left column, directly below the clock pill.
+ * "🏝️ Island 12 / 49 · 7 visited", or "🏝️ Main Island" on the main island. Sits in the top-left column, directly below the clock pill.
  * In touch mode the text is shorter and the inventory row is moved clear of the column.
  */
 export class IslandPill {
@@ -21,7 +23,9 @@ export class IslandPill {
     const visited = this.arch.visited.size;
     const touch = document.documentElement.classList.contains('touch');
     const showVisited = !touch && visited > 0;
-    const text = `🏝️ Island ${this.arch.id} / ${COLS * ROWS}${showVisited ? ` · ${visited} visited` : ''}`;
+    const text = this.arch.id === MAIN_ID
+      ? t('island.main')
+      : `${t('island.pill', { id: this.arch.id, total: this.arch.total })}${showVisited ? t('island.visited', { n: visited }) : ''}`;
     if (text !== this.text) {
       this.text = text;
       this.el.textContent = text;

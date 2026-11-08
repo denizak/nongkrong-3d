@@ -12,7 +12,8 @@
     "@dimforge/rapier3d-compat": "^0.21.0",
     "simplex-noise": "^4.0.3",
     "stats.js": "^0.17.0",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "trystero": "^0.26.0"
   },
   "devDependencies": {
     "@types/stats.js": "^0.17.4",

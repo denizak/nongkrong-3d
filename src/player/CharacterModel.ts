@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { applyLook, bobAntenna, loadLook, type Look } from './Look';
 
 const MODEL_URL = `${import.meta.env.BASE_URL}models/character.glb`;
@@ -70,6 +71,59 @@ export const PRONE = {
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
 export type Pose = 'stand' | 'sit' | 'lie';
+
+/**
+ * Rest measurements taken once from the local robot, per unit of model scale: where the feet sit
+ * (scene y offset) and the pivot-space bounds. Both scale linearly with the model's scale, so a clone with any
+ * look can use them without re-measuring its own (skinned) vertices.
+ */
+export interface RestProfile {
+  feetPerScale: number;
+  unitBounds: THREE.Box3;
+}
+
+/** How a clone is set up: the normalisation factor and the rest profile from the local robot. */
+interface CloneSetup {
+  scale: number;
+  rest: RestProfile;
+}
+
+const _boundsPoint = new THREE.Vector3();
+
+/**
+ * Calls fn with the world position of every visible mesh vertex, at rest (current bones; skinned meshes use
+ * their rest pose). Call with fresh world matrices. Used instead of Box3.setFromObject, which is wrong on clones.
+ */
+function forEachVertex(root: THREE.Object3D, fn: (x: number, y: number, z: number) => void) {
+  const v = new THREE.Vector3();
+  root.traverse((o) => {
+    const mesh = o as THREE.SkinnedMesh;
+    if (!mesh.isMesh || !mesh.visible) return;
+    // Skinned vertices read the bone matrices, which only update on render. A fresh clone has never rendered.
+    if (mesh.isSkinnedMesh) mesh.skeleton.update();
+    const pos = mesh.geometry.attributes.position;
+    const e = mesh.matrixWorld.elements;
+    for (let i = 0; i < pos.count; i++) {
+      if (mesh.isSkinnedMesh) mesh.getVertexPosition(i, v);
+      else v.fromBufferAttribute(pos, i);
+      fn(e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12], e[1] * v.x + e[5] * v.y + e[9] * v.z + e[13], e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]);
+    }
+  });
+}
+
+/**
+ * Skinned clone of a model with its own material instances. Geometry and textures stay shared with the
+ * source, so a clone's dispose() can only free what it owns and never touches the local player.
+ */
+function cloneModel(source: THREE.Group): THREE.Group {
+  const copy = cloneSkinned(source) as THREE.Group;
+  copy.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
+  });
+  return copy;
+}
 type Clip = 'idle' | 'walk' | 'run';
 
 const _a = new THREE.Vector3();
@@ -186,8 +240,21 @@ export class CharacterModel {
   /** Bind pose of every bone, so setLook can re-measure from rest. */
   private bindPose: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }[] = [];
   private lookTime = 0;
+  /** Normalisation factor to TARGET_HEIGHT, before the look's type scale. */
+  readonly baseScale: number;
 
-  private constructor(gltf: GLTF) {
+  /** Untouched copy of the loaded model, cloned for remote players. Set by load(). */
+  private static template: { scene: THREE.Group; animations: THREE.AnimationClip[]; setup: CloneSetup } | null = null;
+  /** Rest measurements. Local robots take them from their own vertices; clones copy them from the local robot. */
+  private restProfile: RestProfile | null = null;
+  /** True for remote clones, which use the local robot's rest profile instead of measuring their own vertices. */
+  private fromTemplate = false;
+
+  /**
+   * `clone` is set for remote clones: the local robot's normalisation factor and rest profile. Clones never
+   * measure their own skinned vertices, which read as the wrong height before their first render.
+   */
+  private constructor(gltf: Pick<GLTF, 'scene' | 'animations'>, look?: Look, clone?: CloneSetup) {
     this.scene = gltf.scene;
     this.root.add(this.tip);
     this.tip.add(gltf.scene);
@@ -197,18 +264,28 @@ export class CharacterModel {
 
     // Scale to the target height, then apply the saved look. applyLook stands the feet on y = 0,
     // since its whole-model scale can change the height.
-    const size = new THREE.Box3().setFromObject(gltf.scene);
-    gltf.scene.scale.setScalar(TARGET_HEIGHT / Math.max(1e-3, size.max.y - size.min.y));
+    if (clone) {
+      gltf.scene.scale.setScalar(clone.scale);
+      this.restProfile = clone.rest;
+      this.fromTemplate = true;
+    } else {
+      const size = new THREE.Box3().setFromObject(gltf.scene);
+      gltf.scene.scale.setScalar(TARGET_HEIGHT / Math.max(1e-3, size.max.y - size.min.y));
+    }
+    // The base factor, before applyLook's per-type scale. Clones start from this.
+    this.baseScale = gltf.scene.scale.x;
     gltf.scene.traverse((o) => {
       if ((o as THREE.Bone).isBone) {
         this.bindPose.push({ bone: o, position: o.position.clone(), quaternion: o.quaternion.clone(), scale: o.scale.clone() });
       }
     });
-    this._look = loadLook();
+    this._look = look ?? loadLook();
     applyLook(gltf.scene, this._look);
+    this.settleFeet();
 
     // Measure the bind pose before any animation touches the bones.
     this.measure();
+    if (!this.restProfile) this.restProfile = this.measureRest();
 
     this.mixer = new THREE.AnimationMixer(gltf.scene);
     // Pick each state's clip by name, independent of the order in the file.
@@ -237,11 +314,53 @@ export class CharacterModel {
     this.current?.play();
   }
 
+  /**
+   * Puts the lowest rest-pose vertex on the ground (y = 0 in the pivot). Measured in world space from the
+   * vertices, so it is right for clones too. Box3 gave a 1.15 m error on clones.
+   */
+  private settleFeet() {
+    if (this.fromTemplate && this.restProfile) {
+      this.scene.position.y = this.restProfile.feetPerScale * this.scene.scale.x;
+      this.scene.updateWorldMatrix(true, true);
+      return;
+    }
+    this.scene.position.y = 0;
+    this.scene.updateWorldMatrix(true, true);
+    const tipY = this.tip.matrixWorld.elements[13];
+    let low = Infinity;
+    forEachVertex(this.scene, (_x, y) => {
+      if (y < low) low = y;
+    });
+    this.scene.position.y = -(low - tipY);
+    this.scene.updateWorldMatrix(true, true);
+  }
+
   /** Measures the bind pose: pivot-space bounds, and the prone and sit bones and lengths. Tip must be identity. */
   private measure() {
-    this.bounds.setFromObject(this.scene);
+    if (this.fromTemplate && this.restProfile) {
+      const s = this.scene.scale.x;
+      this.bounds.min.copy(this.restProfile.unitBounds.min).multiplyScalar(s);
+      this.bounds.max.copy(this.restProfile.unitBounds.max).multiplyScalar(s);
+    } else {
+      this.bounds.makeEmpty();
+      forEachVertex(this.scene, (x, y, z) => this.bounds.expandByPoint(_boundsPoint.set(x, y, z)));
+    }
     this.prone = this.findProneRig(this.scene);
     this.sit = this.findSitRig(this.scene);
+  }
+
+  /** Rest measurements of this model, shared with clones. */
+  get rest(): RestProfile {
+    return this.restProfile!;
+  }
+
+  /** Measures the rest profile of a local robot, in units of its current scale. */
+  private measureRest(): RestProfile {
+    const s = this.scene.scale.x;
+    return {
+      feetPerScale: this.scene.position.y / s,
+      unitBounds: new THREE.Box3(this.bounds.min.clone().divideScalar(s), this.bounds.max.clone().divideScalar(s)),
+    };
   }
 
   /** The look currently worn by this model. */
@@ -266,7 +385,7 @@ export class CharacterModel {
       p.bone.scale.copy(p.scale);
     }
     applyLook(this.scene, look);
-    this.scene.updateWorldMatrix(true, true);
+    this.settleFeet();
     this.measure();
     this.tip.rotation.x = tipRot;
     this.tip.position.y = tipY;
@@ -381,13 +500,43 @@ export class CharacterModel {
       const type = head.headers.get('content-type') ?? '';
       if (!head.ok || type.includes('text/html')) return null;
       const gltf = await new GLTFLoader().loadAsync(MODEL_URL);
-      return new CharacterModel(gltf);
+      // The constructor rescales and reparents the scene, so keep a pristine copy for remote clones.
+      const template = { scene: cloneModel(gltf.scene), animations: gltf.animations, setup: { scale: 1, rest: null as unknown as RestProfile } };
+      const model = new CharacterModel(gltf);
+      template.setup = { scale: model.baseScale, rest: model.rest };
+      CharacterModel.template = template;
+      return model;
     } catch (err) {
       console.warn('Character model not loaded, using placeholder body.', err);
       return null;
     } finally {
       onDone?.();
     }
+  }
+
+  /**
+   * A new robot wearing `look`, for another player: a skinned clone of the loaded model with its own
+   * mixer and poses. Returns null when the model did not load (the caller uses a placeholder).
+   */
+  static cloneFor(look: Look): CharacterModel | null {
+    const t = CharacterModel.template;
+    if (!t) return null;
+    return new CharacterModel({ scene: cloneModel(t.scene), animations: t.animations }, look, t.setup);
+  }
+
+  /**
+   * Stops the mixer and frees this instance's materials. Geometry is shared with the template, so it stays.
+   * Only for clones made by cloneFor; the local player's model is never disposed.
+   */
+  dispose() {
+    this.mixer.stopAllAction();
+    this.mixer.uncacheRoot(this.scene);
+    this.root.removeFromParent();
+    this.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) m.dispose();
+    });
   }
 
   /** Switches pose: sit or lie down on the idle clip (slowed), or stand up. */

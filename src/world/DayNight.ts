@@ -1,9 +1,13 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import { PointsNodeMaterial } from 'three/webgpu';
 import { attribute, uniform } from 'three/tsl';
 import type { Environment } from './Environment';
-import { WATER_LEVEL, ZONES, type Terrain } from './Terrain';
+import { WATER_LEVEL, ZONES, type Ground, type Zones } from './Terrain';
 import './daynight.css';
+
+/** Orchard centre and radius, for the firefly cluster. */
+export type Orchard = { x: number; z: number; r: number };
 
 /** Real seconds for one full in-game day. */
 export const DAY_SECONDS = 1200;
@@ -153,7 +157,7 @@ export class DayNight {
   constructor(
     scene: THREE.Scene,
     private env: Environment,
-    private terrain: Terrain,
+    private terrain: Ground,
     private renderer: THREE.WebGPURenderer,
   ) {
     this.fog = scene.fog as THREE.Fog;
@@ -175,7 +179,7 @@ export class DayNight {
     document.body.append(this.pill);
 
     const help = document.querySelector<HTMLElement>('#hud .help');
-    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''} · T — +1 hour · R — rain`;
+    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''}${t('help.time')}`;
 
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'KeyT' || e.repeat || isTyping()) return;
@@ -355,11 +359,49 @@ export class DayNight {
   }
 
   /** Fireflies in three clusters: pond, orchard and the paddy edges. */
-  private buildFireflies(): THREE.Points {
-    const { pond, paddy } = ZONES;
-    const ORCHARD = { x: -14, z: 12, r: 7 };
+  private buildFireflies(zones: Zones = ZONES, orchard: Orchard = { x: -14, z: 12, r: 7 }): THREE.Points {
     const flies: Firefly[] = [];
     for (let i = 0; i < FIREFLY_COUNT; i++) {
+      flies.push({
+        cx: 0, cz: 0, reach: 1,
+        phase: rand(0, Math.PI * 2),
+        speed: rand(0.6, 1.2),
+        blink: rand(0.8, 2.0),
+        blinkPhase: rand(0, Math.PI * 2),
+      });
+    }
+    this.flies = flies;
+    this.scatterFireflies(zones, orchard);
+    for (let i = 0; i < FIREFLY_COUNT; i++) FIREFLY_COLOR.toArray(this.flyBase, i * 3);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.flyPos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.flyCol, 3));
+    const mat = new THREE.PointsMaterial({
+      size: 0.35,
+      vertexColors: true,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.visible = false;
+    return pts;
+  }
+
+  /** The live island changed: scatter the firefly clusters around its pond, orchard and paddy. */
+  setIsland(zones: Zones, orchard: Orchard) {
+    this.scatterFireflies(zones, orchard);
+  }
+
+  private scatterFireflies(zones: Zones, orchard: Orchard) {
+    const { pond, paddy } = zones;
+    const ORCHARD = orchard;
+    const flies = this.flies;
+    for (let i = 0; i < FIREFLY_COUNT; i++) {
+      const fly = flies[i];
       let cx: number;
       let cz: number;
       let reach: number;
@@ -381,39 +423,17 @@ export class DayNight {
         const hd = paddy.d / 2 + 1.5;
         const s = rand(0, 4);
         const side = Math.floor(s);
-        const f = s - side;
-        if (side === 0) { cx = paddy.x - hw + 2 * hw * f; cz = paddy.z - hd; }
-        else if (side === 1) { cx = paddy.x + hw; cz = paddy.z - hd + 2 * hd * f; }
-        else if (side === 2) { cx = paddy.x + hw - 2 * hw * f; cz = paddy.z + hd; }
-        else { cx = paddy.x - hw; cz = paddy.z + hd - 2 * hd * f; }
+        const frac = s - side;
+        if (side === 0) { cx = paddy.x - hw + 2 * hw * frac; cz = paddy.z - hd; }
+        else if (side === 1) { cx = paddy.x + hw; cz = paddy.z - hd + 2 * hd * frac; }
+        else if (side === 2) { cx = paddy.x + hw - 2 * hw * frac; cz = paddy.z + hd; }
+        else { cx = paddy.x - hw; cz = paddy.z + hd - 2 * hd * frac; }
         reach = 0.8;
       }
-      flies.push({
-        cx, cz, reach,
-        phase: rand(0, Math.PI * 2),
-        speed: rand(0.6, 1.2),
-        blink: rand(0.8, 2.0),
-        blinkPhase: rand(0, Math.PI * 2),
-      });
+      fly.cx = cx;
+      fly.cz = cz;
+      fly.reach = reach;
     }
-    this.flies = flies;
-    for (let i = 0; i < FIREFLY_COUNT; i++) FIREFLY_COLOR.toArray(this.flyBase, i * 3);
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(this.flyPos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(this.flyCol, 3));
-    const mat = new THREE.PointsMaterial({
-      size: 0.35,
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      sizeAttenuation: true,
-    });
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false;
-    pts.visible = false;
-    return pts;
   }
 
   private updateFireflies(night: number) {

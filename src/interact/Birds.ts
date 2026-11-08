@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { ZONES } from '../world/Terrain';
+import { ZONES, type Zones } from '../world/Terrain';
 import { sfx } from '../audio/AudioManager';
 
 const TAU = Math.PI * 2;
@@ -39,6 +39,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 export class Birds {
   private birds: Bird[] = [];
   private nextFlock = 20 + Math.random() * 20;
+  /** The live island's paddy: where the flocks come from and land. */
+  private zone: Zones['paddy'] = ZONES.paddy;
   private centre = new THREE.Vector3(ZONES.paddy.x, ZONES.paddy.h, ZONES.paddy.z);
   private bodyGeo = new THREE.SphereGeometry(0.1, 8, 6);
   private headGeo = new THREE.SphereGeometry(0.065, 8, 6);
@@ -55,6 +57,13 @@ export class Birds {
       new THREE.Float32BufferAttribute([0, 0, 0.07, -0.24, 0, 0.01, -0.02, 0, -0.1], 3),
     );
     this.wingGeo.computeVertexNormals();
+  }
+
+  /** The live island changed: its paddy becomes the landing area, and the birds of the old island go. */
+  setIsland(zones: Zones) {
+    this.zone = zones.paddy;
+    this.centre.set(zones.paddy.x, zones.paddy.h, zones.paddy.z);
+    this.clear();
   }
 
   /** Despawns every bird, e.g. after the island changes. */
@@ -157,7 +166,7 @@ export class Birds {
 
   /** Random landing spot in the paddy, or a short hop from `near`. */
   private spot(near?: THREE.Vector3) {
-    const { paddy } = ZONES;
+    const paddy = this.zone;
     const hw = paddy.w / 2 - 1.5;
     const hd = paddy.d / 2 - 1.5;
     let x: number;

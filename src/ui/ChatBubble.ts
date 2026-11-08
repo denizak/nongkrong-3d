@@ -1,8 +1,10 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import './chat.css';
 import type { Input } from '../core/Input';
 import type { Player } from '../player/Player';
 import { sfx } from '../audio/AudioManager';
+import { SpeechBubble } from './SpeechBubble';
 
 /** Anchor heights above the player's feet, in metres, by pose. */
 const HEIGHT_STAND = 2.3;
@@ -10,10 +12,6 @@ const HEIGHT_SIT = 1.5;
 const HEIGHT_LIE = 1.1;
 
 const MAX_LENGTH = 80;
-const BASE_MS = 3000;
-const MS_PER_CHAR = 60;
-const MAX_MS = 9000;
-const FADE_MS = 400;
 
 const isEditable = (el: Element | null) =>
   el instanceof HTMLInputElement ||
@@ -22,18 +20,17 @@ const isEditable = (el: Element | null) =>
 
 /**
  * Press Enter to type a short message; Enter again shows it in a speech bubble
- * above the character's head. Only DOM is used, so no scene objects are added.
+ * above the character's head. "/name X" changes the name instead of sending.
  */
 export class ChatBubble {
   private field = document.createElement('input');
-  private bubble = document.createElement('div');
-  private body = document.createElement('div');
+  private bubble = new SpeechBubble();
   private open = false;
-  private visible = false;
-  private fadeTimer = 0;
-  private hideTimer = 0;
   private anchor = new THREE.Vector3();
-  private local = new THREE.Vector3();
+  /** Called with each message sent from the box (not /name commands). */
+  onSend: ((text: string) => void) | null = null;
+  /** Called with the argument of "/name ...". */
+  onName: ((name: string) => void) | null = null;
 
   constructor(
     private camera: THREE.Camera,
@@ -44,16 +41,11 @@ export class ChatBubble {
     f.type = 'text';
     f.className = 'chat-input';
     f.maxLength = MAX_LENGTH;
-    f.placeholder = 'Say something…';
+    f.placeholder = t('chat.placeholder');
     f.autocomplete = 'off';
     f.enterKeyHint = 'go';
-    f.setAttribute('aria-label', 'Chat message');
-
-    this.bubble.className = 'chat-bubble';
-    this.bubble.style.display = 'none';
-    this.body.className = 'chat-bubble-body';
-    this.bubble.append(this.body);
-    document.body.append(f, this.bubble);
+    f.setAttribute('aria-label', t('chat.aria'));
+    document.body.append(f);
 
     // Enter opens the box, unless the player is already typing in some other field.
     window.addEventListener('keydown', (e) => {
@@ -84,7 +76,7 @@ export class ChatBubble {
 
     // Mention the shortcut in the existing HUD help line.
     const help = document.querySelector<HTMLElement>('#hud .help');
-    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''} · Enter — chat`;
+    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''}${t('help.chat')}`;
   }
 
   /** Opens the chat box from a button (the touch Chat button). Does nothing if it is already open. */
@@ -111,56 +103,31 @@ export class ChatBubble {
   private submit() {
     const text = this.field.value.trim();
     this.close();
-    if (text) {
-      sfx.play('blip');
-      this.say(text);
+    if (!text) return;
+    const name = /^\/(?:name|nama)(?:\s+(.*))?$/i.exec(text);
+    if (name) {
+      this.onName?.(name[1] ?? '');
+      return;
     }
+    sfx.play('blip');
+    this.say(text);
+    this.onSend?.(text);
   }
 
   /** Shows `text` in a speech bubble above the character, replacing any current one. */
   say(text: string) {
-    const t = text.trim().slice(0, MAX_LENGTH);
-    if (!t) return;
-
-    window.clearTimeout(this.fadeTimer);
-    window.clearTimeout(this.hideTimer);
-    this.body.textContent = t;
-    this.body.classList.remove('pop');
-    void this.body.offsetWidth; // restart the pop-in animation
-    this.body.classList.add('pop');
-    this.bubble.classList.remove('fade');
-    this.bubble.style.display = 'block';
-    this.visible = true;
-
-    const ms = Math.min(MAX_MS, BASE_MS + MS_PER_CHAR * t.length);
-    this.fadeTimer = window.setTimeout(() => this.bubble.classList.add('fade'), ms);
-    this.hideTimer = window.setTimeout(() => {
-      this.visible = false;
-      this.bubble.style.display = 'none';
-    }, ms + FADE_MS);
+    this.bubble.say(text);
   }
 
   /** Call once per frame after the camera has been updated. */
   update() {
-    if (!this.visible) return;
+    if (!this.bubble.showing) return;
 
     const pose = this.player.pose;
     const h = pose === 'sit' ? HEIGHT_SIT : pose === 'lie' ? HEIGHT_LIE : HEIGHT_STAND;
     const p = this.player.position;
     this.anchor.set(p.x, p.y + h, p.z);
-
-    // Behind the camera: camera space looks down -Z, so a positive z means behind.
     this.camera.updateMatrixWorld();
-    this.local.copy(this.anchor).applyMatrix4(this.camera.matrixWorldInverse);
-    if (this.local.z >= 0) {
-      this.bubble.style.visibility = 'hidden';
-      return;
-    }
-
-    this.local.copy(this.anchor).project(this.camera);
-    const x = (this.local.x * 0.5 + 0.5) * window.innerWidth;
-    const y = (-this.local.y * 0.5 + 0.5) * window.innerHeight;
-    this.bubble.style.visibility = 'visible';
-    this.bubble.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`;
+    this.bubble.place(this.anchor, this.camera);
   }
 }

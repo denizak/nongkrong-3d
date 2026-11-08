@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type RAPIER from '@dimforge/rapier3d-compat';
-import type { Terrain } from '../world/Terrain';
+import type { Ground } from '../world/Terrain';
 import type { Physics } from '../core/Physics';
 import type { CharacterModel, Pose } from './CharacterModel';
 
@@ -40,7 +40,7 @@ export class Player {
   speedMultiplier = 1;
 
   constructor(
-    private terrain: Terrain,
+    private terrain: Ground,
     physics: Physics,
     private model: CharacterModel | null,
     /** True on the live island's bridges (local coordinates). */
@@ -164,6 +164,11 @@ export class Player {
     const tilt = 0.08 * moving * (this.speed / RUN_SPEED);
     this.body.position.y = hop + (this.model ? 0 : -SIT_DROP * this.sitAmt + LIE_LIFT * lie);
     this.body.rotation.x = tilt * (1 - lie) - (Math.PI / 2) * lie;
+  }
+
+  /** Current horizontal speed in m/s, as used for the walk and run clips. */
+  get currentSpeed() {
+    return this.speed;
   }
 
   /** Heading in radians, as saved and restored. */

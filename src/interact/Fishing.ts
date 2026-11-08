@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+import { speciesName } from './FishSpecies';
 import * as THREE from 'three/webgpu';
 import { WATER_LEVEL } from '../world/Terrain';
 import type { Player } from '../player/Player';
@@ -139,9 +141,9 @@ export class Fishing {
       case 'casting':
       case 'waiting':
       case 'nibble':
-        return 'Reel in';
+        return t('fish.reelIn');
       case 'bite':
-        return 'Hook it!';
+        return t('fish.hook');
       default:
         return null;
     }
@@ -178,7 +180,7 @@ export class Fishing {
         this.beginReel('reel', REEL_TIME);
         break;
       case 'nibble':
-        this.escape('Too early!');
+        this.escape(t('fish.tooEarly'));
         break;
       case 'bite':
         this.catch();
@@ -222,7 +224,7 @@ export class Fishing {
         break;
       case 'bite':
         this.timer -= dt;
-        if (this.timer <= 0) this.escape('It got away…');
+        if (this.timer <= 0) this.escape(t('fish.escaped'));
         break;
       case 'caught':
       case 'escaped':
@@ -268,7 +270,7 @@ export class Fishing {
     const cm = Math.round(s.minCm + Math.random() * (s.maxCm - s.minCm));
     const isNew = this.deps.pedia.record(s, cm);
     this.deps.inventory.add(fishItemId(s));
-    this.deps.pedia.showCatch(`You caught a ${s.name}! ${cm} cm`, isNew);
+    this.deps.pedia.showCatch(t('pedia.caught', { name: speciesName(s), cm }), isNew);
     // Rarer fish get a bigger jingle.
     sfx.play(s.weight <= 2 ? 'jingle_steel_12' : s.weight <= 8 ? 'jingle_steel_05' : 'jingle_steel_00', { volume: 0.9 });
     if (isNew) sfx.play('blip', { volume: 0.8 });

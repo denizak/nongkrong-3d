@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="id">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
@@ -29,11 +29,20 @@
       }
       #loading button:hover, #loading button:focus-visible { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 0 3px #5a7a3a, 0 10px 28px rgba(0, 0, 0, 0.2); outline: none; }
       #loading button:disabled { opacity: 0.6; }
-      /* Character card above the start button: swatch, name, shuffle. */
+      /* Character card above the start button: swatch, name, shuffle. Returning visitors get a compact line instead. */
       #loading .look { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 0 0 24px; }
       #loading .swatch { width: 84px; height: 84px; border-radius: 50%; box-shadow: 0 6px 16px rgba(20, 60, 60, 0.25), inset 0 0 0 3px rgba(255, 255, 255, 0.55); }
+      #loading .swatch.mini { width: 22px; height: 22px; flex: none; box-shadow: 0 2px 6px rgba(20, 60, 60, 0.25), inset 0 0 0 2px rgba(255, 255, 255, 0.55); }
       #loading .look-name { font-size: 18px; font-weight: 700; color: #fffdf4; text-shadow: 0 2px 8px rgba(20, 80, 80, 0.35); }
       #loading .look button.shuffle { font-size: 15px; font-weight: 700; padding: 8px 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+      #loading .look-compact { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 10px; font-size: 15px; color: #fffdf4; text-shadow: 0 2px 8px rgba(20, 80, 80, 0.35); }
+      #loading .playing b { font-weight: 800; }
+      #loading .look-edit, #loading .look-edit:hover { min-height: 36px; padding: 6px 14px; font-size: 14px; font-weight: 700; color: #2b5b57; background: rgba(255, 253, 244, 0.75); box-shadow: none; transform: none; text-shadow: none; }
+      #loading .look-edit:focus-visible { box-shadow: 0 0 0 3px #5a7a3a; outline: none; transform: none; }
+      /* Full card expands with a height and opacity transition (grid-template-rows 0fr to 1fr). */
+      #loading .look-full { display: grid; grid-template-rows: 1fr; width: 100%; transition: grid-template-rows 0.3s ease, opacity 0.3s ease; }
+      #loading .look-full.collapsed { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+      #loading .look-inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 4px 0; }
       #loading [hidden] { display: none !important; }
     </style>
   </head>
@@ -41,10 +50,10 @@
     <div id="loading">
       <div class="card">
         <h1>Nongkrong 3D</h1>
-        <p class="sub">a cozy island hangout</p>
+        <p class="sub" data-i18n="loading.sub">tempat nongkrong santai di pulau</p>
         <div id="loading-track" class="track"><div id="loading-fill" class="fill"></div></div>
-        <div id="loading-label" class="label">Starting…</div>
-        <button id="loading-start" hidden>Click to start</button>
+        <div id="loading-label" class="label" data-i18n="loading.starting">Memulai…</div>
+        <button id="loading-start" data-i18n="loading.start" hidden>Klik untuk mulai</button>
       </div>
     </div>
     <div id="app"></div>
@@ -53,8 +62,8 @@
     <div id="prompt"></div>
     <div id="hud">
       <div class="title">Nongkrong 3D</div>
-      <div id="backend">starting…</div>
-      <div class="help">WASD / arrows — move · Shift — run · E — interact · C — sit · Z — lie down · F — Fishpedia · drag — orbit camera · scroll — zoom</div>
+      <div id="backend" data-i18n="backend.starting">memulai…</div>
+      <div class="help" data-i18n="help.base">WASD / panah — jalan · Shift — lari · E — interaksi · C — duduk · Z — rebahan · F — Fishpedia · seret — putar kamera · scroll — zoom</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

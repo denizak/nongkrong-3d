@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 export type WaterKind = 'pond' | 'sea';
 
 export interface Species {
@@ -25,6 +26,9 @@ export const SPECIES: Species[] = [
   { id: 'tuna', name: 'Tuna', emoji: '🐟', water: 'sea', weight: 8, minCm: 60, maxCm: 150 },
   { id: 'mahi-mahi', name: 'Mahi-mahi', emoji: '🐠', water: 'sea', weight: 2, minCm: 60, maxCm: 120 },
 ];
+
+/** Species name in the active language, from the dictionary in src/i18n.ts. */
+export const speciesName = (s: Species) => t(`fish.${s.id}`);
 
 /** Inventory and Fishpedia id for a species. */
 export const fishItemId = (s: Species) => `fish_${s.id}`;

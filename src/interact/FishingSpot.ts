@@ -1,5 +1,6 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
-import { ZONES, WATER_LEVEL, type Terrain } from '../world/Terrain';
+import { ZONES, WATER_LEVEL, type Ground, type Zones } from '../world/Terrain';
 import type { Player } from '../player/Player';
 import type { Inventory } from '../ui/Inventory';
 import type { Fishpedia } from '../ui/Fishpedia';
@@ -16,7 +17,7 @@ const MIN_DEPTH = 0.4;
 export interface FishingSpotDeps {
   scene: THREE.Scene;
   camera: THREE.Camera;
-  terrain: Terrain;
+  terrain: Ground;
   player: Player;
   inventory: Inventory;
   pedia: Fishpedia;
@@ -33,6 +34,8 @@ export class FishingSpot implements Interactable {
   private target = new THREE.Vector3();
   private water: WaterKind = 'sea';
   private available = false;
+  /** The live island's zones: its pond decides pond or sea. */
+  private zones: Zones = ZONES;
 
   constructor(private deps: FishingSpotDeps) {
     this.fishing = new Fishing(deps);
@@ -48,6 +51,11 @@ export class FishingSpot implements Interactable {
     return this.fishing.active;
   }
 
+  /** The live island changed: its pond is the one that counts. */
+  setZones(zones: Zones) {
+    this.zones = zones;
+  }
+
   /** Cancels any cast without the reel animation. Used when the island changes. */
   abort() {
     this.fishing.abort();
@@ -55,7 +63,7 @@ export class FishingSpot implements Interactable {
 
   prompt(): string | null {
     if (this.fishing.active) return this.fishing.prompt();
-    return this.available && this.deps.player.pose === 'stand' ? 'Fish' : null;
+    return this.available && this.deps.player.pose === 'stand' ? t('fish.fish') : null;
   }
 
   isLocked() {
@@ -96,7 +104,7 @@ export class FishingSpot implements Interactable {
     const deep = terrain.heightAt(x, z) < WATER_LEVEL - MIN_DEPTH;
     const onShore = terrain.heightAt(p.x, p.z) > WATER_LEVEL - MIN_DEPTH || (this.deps.onBridge?.(p.x, p.z) ?? false);
     this.available = deep && onShore;
-    const pond = ZONES.pond;
+    const pond = this.zones.pond;
     this.water = Math.hypot(x - pond.x, z - pond.z) <= pond.r + 2 ? 'pond' : 'sea';
   }
 }

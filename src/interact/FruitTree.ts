@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import type { FruitTree as FruitTreeSite } from '../world/Props';
 import type { Interactable, InteractContext } from './Interactable';
@@ -54,7 +55,7 @@ export class FruitTree implements Interactable {
 
   prompt(): string | null {
     if (this.shakeT >= 0) return null;
-    return this.hangingCount() > 0 ? 'Shake tree' : null;
+    return this.hangingCount() > 0 ? t('prompt.shake') : null;
   }
 
   interact(ctx: InteractContext) {

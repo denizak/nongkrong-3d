@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import './touch.css';
 import type { Input } from '../core/Input';
 import type { Fishpedia } from './Fishpedia';
@@ -100,13 +101,13 @@ export class TouchControls {
     const row2 = document.createElement('div');
     row2.className = 'row';
     row1.append(
-      this.button('💬', 'Chat', () => this.chat.openChat()),
-      this.button('📖', 'Fish', () => this.fishpedia.toggle()),
-      this.button('🪑', 'Sit', () => this.input.pressSit()),
+      this.button('💬', t('touch.chat'), () => this.chat.openChat()),
+      this.button('📖', t('touch.fish'), () => this.fishpedia.toggle()),
+      this.button('🪑', t('touch.sit'), () => this.input.pressSit()),
     );
     row2.append(
-      this.button('😴', 'Lie', () => this.input.pressLie()),
-      this.button('✋', 'Action', () => this.input.pressInteract(), 'big'),
+      this.button('😴', t('touch.lie'), () => this.input.pressLie()),
+      this.button('✋', t('touch.action'), () => this.input.pressInteract(), 'big'),
     );
     cluster.append(row1, row2);
     document.body.append(cluster);
@@ -139,7 +140,7 @@ export class TouchControls {
     if (!this.enabled) return;
     const el = document.createElement('div');
     el.className = 'touch-hint';
-    el.textContent = 'Drag left to move · drag right to look';
+    el.textContent = t('touch.hint');
     document.body.append(el);
     requestAnimationFrame(() => el.classList.add('show'));
     setTimeout(() => {
@@ -150,7 +151,7 @@ export class TouchControls {
 
   private shortenHelp() {
     const help = document.querySelector<HTMLElement>('#hud .help');
-    if (help) help.textContent = 'Drag left to move · drag right to look';
+    if (help) help.textContent = t('touch.hint');
   }
 
   private inCanvasZone(e: PointerEvent): boolean {

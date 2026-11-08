@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
@@ -57,11 +58,11 @@ interface TypeSpec {
 }
 
 const TYPES: Record<RobotType, TypeSpec> = {
-  0: { name: 'Classic', scale: 1, headScale: 1 },
-  1: { name: 'Sprout', scale: 0.92, headScale: 1.22 },
-  2: { name: 'Antenna', scale: 1.06, headScale: 1 },
-  3: { name: 'Captain', scale: 1, headScale: 1 },
-  4: { name: 'Explorer', scale: 1, headScale: 1.08 },
+  0: { name: 'robot.classic', scale: 1, headScale: 1 },
+  1: { name: 'robot.sprout', scale: 0.92, headScale: 1.22 },
+  2: { name: 'robot.antenna', scale: 1.06, headScale: 1 },
+  3: { name: 'robot.captain', scale: 1, headScale: 1 },
+  4: { name: 'robot.explorer', scale: 1, headScale: 1.08 },
 };
 
 /** Accessories are built at natural size, then scaled about their attachment point so they read next to the big head. */
@@ -78,11 +79,12 @@ function luminance(hex: string): number {
 }
 
 function bodyName(hex: string): string {
-  return BODY_PALETTE.find((b) => b.hex.toLowerCase() === hex.toLowerCase())?.name ?? 'Custom';
+  const name = BODY_PALETTE.find((b) => b.hex.toLowerCase() === hex.toLowerCase())?.name;
+  return name ? t(`color.${name}`) : t('color.custom');
 }
 
 function nameFor(type: RobotType, body: string): string {
-  return `${bodyName(body)} ${TYPES[type].name}`;
+  return t('look.name', { type: t(TYPES[type].name), color: bodyName(body) });
 }
 
 /** Builds a look from parts. Name is derived from the body colour and type. */
@@ -369,6 +371,9 @@ export function applyLook(root: THREE.Object3D, look: Look): void {
   };
   root.scale.fromArray(base.scale).multiplyScalar(type.scale);
   root.position.y = base.y;
+  // Refresh every child's world matrix first. Box3.setFromObject only updates the root, so a clone's
+  // children would otherwise be measured with stale matrices and the feet would float or sink.
+  root.updateWorldMatrix(true, true);
   const box = new THREE.Box3().setFromObject(root);
   const parentY = root.parent ? root.parent.getWorldPosition(new THREE.Vector3()).y : 0;
   root.position.y = base.y - (box.min.y - parentY);

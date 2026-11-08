@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { WATER_LEVEL, type Terrain } from './Terrain';
+import { WATER_LEVEL, type Ground } from './Terrain';
 import { isTyping } from './DayNight';
 
 const STREAKS = 1500;
@@ -46,7 +46,7 @@ export class Weather {
 
   constructor(
     scene: THREE.Scene,
-    private terrain: Terrain,
+    private terrain: Ground,
   ) {
     // Streak orientation is the same for every drop, so build it once and only move the translation.
     const fall = new THREE.Vector3(WIND.x, -FALL_SPEED, WIND.z).normalize();

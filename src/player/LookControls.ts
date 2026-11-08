@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { Input } from '../core/Input';
 import type { Inventory } from '../ui/Inventory';
 import type { Loading } from '../ui/Loading';
@@ -41,7 +42,7 @@ export class LookControls {
 
     // Mention the shortcut in the existing HUD help line.
     const help = document.querySelector<HTMLElement>('#hud .help');
-    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''} · K — new robot`;
+    if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''}${t('help.robot')}`;
 
     if (document.documentElement.classList.contains('touch')) this.buildTouchButton();
   }
@@ -70,15 +71,15 @@ export class LookControls {
     saveLook(look);
     this.deps.model?.setLook(look);
     this.paint?.(look);
-    this.deps.inventory.toast(`You are now: ${look.name}`);
+    this.deps.inventory.toast(t('look.you', { name: look.name }));
   }
 
   private buildTouchButton() {
     const b = document.createElement('button');
     b.id = 'look-dice';
     b.type = 'button';
-    b.title = 'New robot';
-    b.setAttribute('aria-label', 'New robot');
+    b.title = t('look.new');
+    b.setAttribute('aria-label', t('look.new'));
     b.textContent = '🎲';
     b.addEventListener('click', () => this.reroll());
     document.body.append(b);

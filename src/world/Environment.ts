@@ -1,9 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { MeshBasicNodeMaterial } from 'three/webgpu';
-import { clamp, float, floor, max, mix, positionWorld, sin, smoothstep, step, texture, time, uniform, vec2, vec3 } from 'three/tsl';
+import { clamp, float, max, mix, positionWorld, sin, smoothstep, step, texture, time, uniform, vec2, vec3 } from 'three/tsl';
 import type { UniformNode } from 'three/webgpu';
-import { Terrain, WATER_LEVEL } from './Terrain';
-import { SPACING } from './Archipelago';
+import { WATER_LEVEL } from './Terrain';
 
 const SKY_TOP = new THREE.Color('#4fb3ea');
 const SKY_HORIZON = new THREE.Color('#c9eefc');
@@ -11,7 +10,9 @@ const FOG = new THREE.Color('#bfe7f7');
 
 /** Water depth (m) at which the depth map saturates. */
 const MAX_DEPTH = 6;
-const DEPTH_RES = 256;
+/** The depth map covers a square window of this side (m), centred on the live island. */
+const WINDOW = 760;
+const DEPTH_RES = 512;
 
 /** Sky dome, sun + fill light, toon water and fog. DayNight drives the colours and the sun direction. */
 export class Environment {
@@ -20,11 +21,14 @@ export class Environment {
   readonly sky: THREE.Mesh;
   /** 0 by day, 1 at night. Darkens and blue-shifts the toon water. */
   readonly waterNight: UniformNode<'float', number> = uniform(0);
-  /** 3x3 grid of cell existence around the live island, row-major from the north-west corner. */
-  private mask: THREE.DataTexture;
+  private depth: THREE.DataTexture;
   private water: THREE.Mesh;
 
-  constructor(scene: THREE.Scene, terrain: Terrain) {
+  /** `heightAtWorld` gives the ground height at a world point, for the water depth window. */
+  constructor(
+    scene: THREE.Scene,
+    private heightAtWorld: (x: number, z: number) => number,
+  ) {
     scene.fog = new THREE.Fog(FOG, 70, 260);
     scene.background = FOG;
 
@@ -61,27 +65,37 @@ export class Environment {
     this.sun.shadow.normalBias = 0.03;
     scene.add(this.sun, this.sun.target);
 
-    // One big water plane: ocean around the island and the pond basin.
-    this.mask = new THREE.DataTexture(new Uint8Array(9).fill(255), 3, 3, THREE.RedFormat, THREE.UnsignedByteType);
-    this.mask.minFilter = THREE.NearestFilter;
-    this.mask.magFilter = THREE.NearestFilter;
-    this.mask.wrapS = this.mask.wrapT = THREE.ClampToEdgeWrapping;
-    this.mask.needsUpdate = true;
+    this.depth = new THREE.DataTexture(new Uint8Array(DEPTH_RES * DEPTH_RES), DEPTH_RES, DEPTH_RES, THREE.RedFormat, THREE.UnsignedByteType);
+    this.depth.minFilter = THREE.LinearFilter;
+    this.depth.magFilter = THREE.LinearFilter;
+    this.depth.wrapS = this.depth.wrapT = THREE.ClampToEdgeWrapping;
+    this.depth.needsUpdate = true;
 
+    // One big water plane: ocean around the islands and the pond basins.
     const waterGeo = new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(-Math.PI / 2);
-    this.water = new THREE.Mesh(waterGeo, toonWater(terrain, this.waterNight, this.mask));
+    this.water = new THREE.Mesh(waterGeo, toonWater(this.depth, this.waterNight));
     this.water.position.y = WATER_LEVEL;
     scene.add(this.water);
   }
 
   /**
-   * Which of the 3x3 cells around the live island hold an island. `exists[(dz + 1) * 3 + (dx + 1)]`,
-   * with dz = +1 toward the south (+z). Cells outside the grid count as deep water.
+   * Rebuilds the water depth for the window centred on the live island's centre (world coordinates).
+   * Samples come from the registry, so neighbouring islands' shores show in the water too. Takes tens of ms.
    */
-  setIslandMask(exists: readonly boolean[]) {
-    const data = this.mask.image.data as Uint8Array;
-    for (let i = 0; i < 9; i++) data[i] = exists[i] ? 255 : 0;
-    this.mask.needsUpdate = true;
+  setWindow(cx: number, cz: number) {
+    const data = this.depth.image.data as Uint8Array;
+    const cell = WINDOW / DEPTH_RES;
+    const half = WINDOW / 2;
+    for (let j = 0; j < DEPTH_RES; j++) {
+      const z = cz - half + (j + 0.5) * cell;
+      for (let i = 0; i < DEPTH_RES; i++) {
+        const x = cx - half + (i + 0.5) * cell;
+        const h = this.heightAtWorld(x, z);
+        const depth = Math.min(1, Math.max(0, (WATER_LEVEL - h) / MAX_DEPTH));
+        data[j * DEPTH_RES + i] = Math.round(depth * 255);
+      }
+    }
+    this.depth.needsUpdate = true;
   }
 
   /** Keep the shadow frustum and sky centred on the player. */
@@ -92,26 +106,6 @@ export class Environment {
   }
 }
 
-/** Water depth per texel over the terrain square, 0 (dry) to MAX_DEPTH. */
-function buildDepthTexture(terrain: Terrain) {
-  const data = new Uint8Array(DEPTH_RES * DEPTH_RES);
-  const cell = terrain.size / DEPTH_RES;
-  const half = terrain.size / 2;
-  for (let j = 0; j < DEPTH_RES; j++) {
-    for (let i = 0; i < DEPTH_RES; i++) {
-      const h = terrain.heightAt(-half + (i + 0.5) * cell, -half + (j + 0.5) * cell);
-      const depth = Math.min(1, Math.max(0, (WATER_LEVEL - h) / MAX_DEPTH));
-      data[j * DEPTH_RES + i] = Math.round(depth * 255);
-    }
-  }
-  const tex = new THREE.DataTexture(data, DEPTH_RES, DEPTH_RES, THREE.RedFormat, THREE.UnsignedByteType);
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  tex.needsUpdate = true;
-  return tex;
-}
-
 const rgb = (hex: string) => {
   const c = new THREE.Color(hex);
   return vec3(c.r, c.g, c.b);
@@ -119,34 +113,21 @@ const rgb = (hex: string) => {
 
 /**
  * Toon water: depth-banded colour, a wobbling white foam line at the shore and light streaks.
- * The depth map covers one island. The world XZ is wrapped into the cell it falls in, so the
- * neighbour proxies get the same shore, and that cell must exist (from the 3x3 mask) to count as land.
+ * `depthTex` covers WINDOW metres around the live island's local origin. Points outside it count as deep.
  */
-function toonWater(terrain: Terrain, night: UniformNode<'float', number>, mask: THREE.DataTexture) {
-  const depthTex = texture(buildDepthTexture(terrain));
-  const maskTex = texture(mask);
+function toonWater(depthTex: THREE.DataTexture, night: UniformNode<'float', number>) {
+  const depthSampler = texture(depthTex);
   const p = positionWorld;
   const t = time;
 
-  // Which cell (-1..1 on each axis) the point is in, and whether it is inside the 3x3 window at all.
-  const rx = floor(p.x.div(SPACING).add(0.5));
-  const rz = floor(p.z.div(SPACING).add(0.5));
-  const inWindow = step(float(-1.5), rx).mul(step(rx, float(1.5))).mul(step(float(-1.5), rz)).mul(step(rz, float(1.5)));
-  const cx = clamp(rx, float(-1), float(1));
-  const cz = clamp(rz, float(-1), float(1));
-  const local = vec2(p.x.sub(cx.mul(SPACING)), p.z.sub(cz.mul(SPACING)));
-
-  // World XZ to map UV inside that cell. Outside the depth map the water counts as deep.
-  const uv = local.add(terrain.size / 2).div(terrain.size);
+  // Local XZ to depth-map UV. Outside the window the water is deep.
+  const uv = vec2(p.x, p.z).add(WINDOW / 2).div(WINDOW);
   const inside = step(float(0), uv.x)
     .mul(step(uv.x, float(1)))
     .mul(step(float(0), uv.y))
     .mul(step(uv.y, float(1)));
-  const cellUv = vec2(cx.add(1.5).div(3), cz.add(1.5).div(3));
-  const exists = maskTex.sample(cellUv).r;
-  const land = inside.mul(exists).mul(inWindow);
-  const sampled = depthTex.sample(uv).r.mul(MAX_DEPTH);
-  const baseDepth = mix(float(MAX_DEPTH), sampled, land);
+  const sampled = depthSampler.sample(clamp(uv, float(0), float(1))).r.mul(MAX_DEPTH);
+  const baseDepth = mix(float(MAX_DEPTH), sampled, inside);
   const wobble = sin(t.mul(1.3).add(p.x.mul(0.7))).mul(0.05).add(sin(t.mul(0.9).sub(p.z.mul(0.9))).mul(0.04));
   const depth = baseDepth.add(wobble);
 

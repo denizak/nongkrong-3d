@@ -1,11 +1,12 @@
+import { t } from '../i18n';
 import { SPECIES, fishItemId } from '../interact/FishSpecies';
 
 const KEY = 'nongkrong.inventory';
 
 const ITEMS: Record<string, { icon: string; name: string }> = {
-  mango: { icon: '🥭', name: 'Mango' },
-  rice: { icon: '🌾', name: 'Rice' },
-  ...Object.fromEntries(SPECIES.map((s) => [fishItemId(s), { icon: s.emoji, name: s.name }])),
+  mango: { icon: '🥭', name: 'item.mango' },
+  rice: { icon: '🌾', name: 'item.rice' },
+  ...Object.fromEntries(SPECIES.map((s) => [fishItemId(s), { icon: s.emoji, name: `fish.${s.id}` }])),
 };
 
 /** Item counts, saved to localStorage, shown in the top bar with a toast on pickup. */
@@ -27,7 +28,7 @@ export class Inventory {
     this.counts[id] = this.get(id) + n;
     this.save();
     this.render();
-    this.toast(`+${n} ${ITEMS[id]?.name ?? id}`);
+    this.toast(t('toast.gain', { n, item: ITEMS[id] ? t(ITEMS[id].name) : id }));
   }
 
   private load(): Record<string, number> {
@@ -52,7 +53,7 @@ export class Inventory {
         const slot = document.createElement('span');
         slot.className = 'slot';
         const item = ITEMS[id];
-        slot.textContent = `${item?.icon ?? '•'} ${item?.name ?? id} ×${n}`;
+        slot.textContent = `${item?.icon ?? '•'} ${item ? t(item.name) : id} ×${n}`;
         return slot;
       });
     this.bar.replaceChildren(...slots);

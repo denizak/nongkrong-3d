@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type { Physics } from '../core/Physics';
-import { Terrain, ZONES, mulberry32 } from './Terrain';
+import { mulberry32, type Terrain, type ShapeSpec } from './Terrain';
 import { instanceModel, type NatureAssets, type NatureName } from './Assets';
 import { buildScarecrow } from '../interact/Scarecrow';
 
@@ -18,7 +18,6 @@ export interface Props {
   scarecrow: THREE.Group;
 }
 
-const ORCHARD = { x: -14, z: 12, r: 6 };
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -46,10 +45,16 @@ export function addProps(
   physics: Physics,
   assets: NatureAssets,
   inCorridor: (x: number, z: number) => boolean,
+  spec: ShapeSpec,
 ): Props {
   const { ColliderDesc } = physics.RAPIER;
   const rand = mulberry32(42);
-  const { spawn, pond, paddy } = ZONES;
+  const { spawn, pond, paddy } = spec.zones;
+  const ORCHARD = spec.orchard;
+  // Linear scale K: distances grow with K, and scatter counts with K squared, so the density stays the same.
+  const K = spec.scale;
+  const density = K * K;
+  const count = (n: number) => Math.round(n * density);
   const group = new THREE.Group();
   group.name = 'props';
   scene.add(group);
@@ -100,8 +105,9 @@ export function addProps(
   const fruitGeo = new THREE.SphereGeometry(0.14, 8, 6);
   const fruitMat = new THREE.MeshStandardMaterial({ color: '#ff9d2e', roughness: 0.5, flatShading: true });
   const fruitTrees: FruitTree[] = [];
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * TAU + range(-0.2, 0.2);
+  const trees = Math.round(8 * K);
+  for (let i = 0; i < trees; i++) {
+    const a = (i / trees) * TAU + range(-0.2, 0.2);
     const r = ORCHARD.r * range(0.6, 1);
     const x = ORCHARD.x + Math.cos(a) * r;
     const z = ORCHARD.z + Math.sin(a) * r;
@@ -136,15 +142,15 @@ export function addProps(
   }
 
   // Palms: mostly on the coast, a few inland on higher ground.
-  for (let i = 0; i < 26; i++) {
-    const p = findSpot(62, (x, z, h) => Math.hypot(x, z) > 40 && h >= 0.4 && h <= 1.5);
+  for (let i = 0; i < count(26); i++) {
+    const p = findSpot(62 * K, (x, z, h) => Math.hypot(x, z) > 40 * K && h >= 0.4 && h <= 1.5);
     if (!p) continue;
     const h = range(5, 7);
     add(pick(PALMS), p.x, p.y, p.z, h);
     physics.addStatic(ColliderDesc.cylinder(h * 0.4, 0.3), p.x, p.y + h * 0.4, p.z);
   }
-  for (let i = 0; i < 6; i++) {
-    const p = findSpot(36, (_x, _z, h) => h > 0.9 && h < 3.5);
+  for (let i = 0; i < count(6); i++) {
+    const p = findSpot(36 * K, (_x, _z, h) => h > 0.9 && h < 3.5);
     if (!p) continue;
     const h = range(5, 7);
     add(pick(PALMS), p.x, p.y, p.z, h);
@@ -152,8 +158,8 @@ export function addProps(
   }
 
   // Rocks: large ones always get a ball collider, small ones only if at least 0.5 m.
-  for (let i = 0; i < 14; i++) {
-    const p = findSpot(70, (_x, _z, h) => h > 0.2);
+  for (let i = 0; i < count(14); i++) {
+    const p = findSpot(70 * K, (_x, _z, h) => h > 0.2);
     if (!p) continue;
     const h = range(1.2, 2.2);
     const name = pick(LARGE_ROCKS);
@@ -162,8 +168,8 @@ export function addProps(
     const r = widthOf(name, h) * 0.45;
     physics.addStatic(ColliderDesc.ball(r), p.x, base + r * 0.9, p.z);
   }
-  for (let i = 0; i < 30; i++) {
-    const p = findSpot(60, (_x, _z, h) => h > 0.2);
+  for (let i = 0; i < count(30); i++) {
+    const p = findSpot(60 * K, (_x, _z, h) => h > 0.2);
     if (!p) continue;
     const h = range(0.3, 0.7);
     const name = pick(SMALL_ROCKS);
@@ -175,29 +181,29 @@ export function addProps(
   }
 
   // Bushes and a few decorations on land.
-  for (let i = 0; i < 22; i++) {
-    const p = findSpot(70, (_x, _z, h) => h > 0.5);
+  for (let i = 0; i < count(22); i++) {
+    const p = findSpot(70 * K, (_x, _z, h) => h > 0.5);
     if (p) add(pick(BUSHES), p.x, p.y, p.z, range(0.8, 1.5));
   }
-  for (let i = 0; i < 3; i++) {
-    const p = findSpot(60, (_x, _z, h) => h > 0.5);
+  for (let i = 0; i < count(3); i++) {
+    const p = findSpot(60 * K, (_x, _z, h) => h > 0.5);
     if (p) add('stump_round', p.x, p.y, p.z, 0.5);
   }
-  for (let i = 0; i < 3; i++) {
-    const p = findSpot(60, (_x, _z, h) => h > 0.5);
+  for (let i = 0; i < count(3); i++) {
+    const p = findSpot(60 * K, (_x, _z, h) => h > 0.5);
     if (p) add('log', p.x, p.y, p.z, 0.45);
   }
-  for (let i = 0; i < 8; i++) {
-    const p = findSpot(60, (_x, _z, h) => h > 0.5);
+  for (let i = 0; i < count(8); i++) {
+    const p = findSpot(60 * K, (_x, _z, h) => h > 0.5);
     if (p) add('mushroom_red', p.x, p.y, p.z, range(0.2, 0.35));
   }
 
   // Bamboo clump on the pond's west shore, about 2 m from the water edge.
-  const bx = pond.x - 12.5;
+  const bx = pond.x - 12.5 * K;
   const bz = pond.z;
   for (let i = 0; i < 10; i++) {
     const a = rand() * TAU;
-    const r = Math.sqrt(rand()) * 1.2;
+    const r = Math.sqrt(rand()) * 1.2 * K;
     const x = bx + Math.cos(a) * r;
     const z = bz + Math.sin(a) * r;
     add('crops_bambooStageB', x, terrain.heightAt(x, z), z, range(3, 4));
@@ -206,7 +212,7 @@ export function addProps(
   physics.addCameraBlocker(ColliderDesc.cylinder(2, 1.5), bx, terrain.heightAt(bx, bz) + 2, bz);
 
   // Lily pads floating on the pond.
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < count(16); i++) {
     const p = findSpot(pond.r - 1.5, (x, z) => Math.hypot(x - pond.x, z - pond.z) < pond.r - 1.5 && terrain.heightAt(x, z) < -0.2);
     if (!p) continue;
     add(pick(['lily_large', 'lily_small'] as const), p.x, 0.03, p.z, range(0.7, 1.3));
@@ -221,8 +227,8 @@ export function addProps(
   }
 
   // Scarecrow at the paddy edge, with a post collider. Its paddy stalks are built by PaddyField.
-  const scarecrowX = paddy.x + 4;
-  const scarecrowZ = paddy.z + 2;
+  const scarecrowX = paddy.x + 4 * K;
+  const scarecrowZ = paddy.z + 2 * K;
   const scarecrow = buildScarecrow();
   scarecrow.position.set(scarecrowX, terrain.heightAt(scarecrowX, scarecrowZ), scarecrowZ);
   group.add(scarecrow);

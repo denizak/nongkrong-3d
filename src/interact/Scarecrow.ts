@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import type { Birds } from './Birds';
 import type { Interactable } from './Interactable';
@@ -6,18 +7,8 @@ import { sfx } from '../audio/AudioManager';
 const TAU = Math.PI * 2;
 const SPIN_TIME = 1.2;
 const BUBBLE_TIME = 3;
-const LINES = [
-  "Hey! I'm on duty!",
-  "The birds don't respect me…",
-  "Nice hat. Mine's better.",
-  "Shoo! Oh wait, you're not a bird.",
-  "I've been standing here since spring.",
-  'Do you think the crows like me?',
-  'Rice is nice!',
-  'Tickles!',
-  'Careful, I\'m stuffed with straw, not patience.',
-  'Psst… harvest the golden ones.',
-];
+/** Dictionary keys for the scarecrow's silly lines (see src/i18n.ts). */
+const LINE_KEYS = ['scarecrow.0', 'scarecrow.1', 'scarecrow.2', 'scarecrow.3', 'scarecrow.4', 'scarecrow.5', 'scarecrow.6', 'scarecrow.7', 'scarecrow.8', 'scarecrow.9'];
 const _v = new THREE.Vector3();
 
 /** Procedural low-poly scarecrow standing on its post base at the origin, about 2.5 m tall. */
@@ -96,7 +87,7 @@ export class Scarecrow implements Interactable {
   }
 
   prompt(): string | null {
-    return 'Poke scarecrow';
+    return t('prompt.poke');
   }
 
   interact() {
@@ -110,10 +101,10 @@ export class Scarecrow implements Interactable {
     this.bubbleT = 0;
     let i = 0;
     do {
-      i = Math.floor(Math.random() * LINES.length);
+      i = Math.floor(Math.random() * LINE_KEYS.length);
     } while (i === this.lastLine);
     this.lastLine = i;
-    this.bubble.textContent = LINES[i];
+    this.bubble.textContent = t(LINE_KEYS[i]);
     this.bubble.classList.add('show');
     sfx.play('knock', { at: this.position, rateJitter: 0.08 });
     this.deps.birds.scareAll();

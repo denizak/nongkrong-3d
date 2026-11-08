@@ -1,12 +1,18 @@
 import type { CameraRig } from '../player/CameraRig';
 import type { Player } from '../player/Player';
-import { START_CELL, COLS, ROWS, type Archipelago, type Cell, type IslandState, type IslandStates } from '../world/Archipelago';
+import { type Archipelago, type IslandState, type IslandStates } from '../world/Archipelago';
+import { ISLAND_COUNT, MAIN_ID, islandIdForLegacyCell } from '../world/Islands';
 
 const KEY = 'nongkrong.save';
 const SAVE_EVERY_MS = 5000;
+/** The old save format: a cell on the old 5x10 grid. Still read, then replaced on the next write. */
+const LEGACY_VERSION = 1;
+const VERSION = 2;
+const LEGACY_COLS = 5;
+const LEGACY_ROWS = 10;
 
 interface SaveData {
-  v: 1;
+  v: number;
   x: number;
   z: number;
   heading: number;
@@ -15,8 +21,10 @@ interface SaveData {
   distance: number;
   /** Game clock in hours (0-24). Optional, so older saves still load. */
   clock?: number;
-  /** Live island cell. Older saves have none and start on the start island. */
-  cell?: Cell;
+  /** Live island id (version 2). */
+  island?: number;
+  /** Live island cell (version 1 only). */
+  cell?: { col: number; row: number };
   /** Saved state of every island the player has changed. */
   islands?: Record<string, IslandState>;
 }
@@ -27,16 +35,16 @@ export interface SavedClock {
   setTime(hour: number): void;
 }
 
-/** What Save needs from the game: the grid, island state, and the switch and reset actions. */
+/** What Save needs from the game: the archipelago, island state, and the switch and reset actions. */
 export interface SaveLinks {
   clock?: SavedClock;
   archipelago: Archipelago;
   islands: IslandStates;
   /** Stores the live island's progress into `islands`, before a save. */
   captureLive(): void;
-  /** Moves to a cell and local spot (places the player and loads that island's state). */
-  enter(cell: Cell, x: number, z: number, heading: number): void;
-  /** Starts over on the start island with fresh state. */
+  /** Moves to an island and a local spot (places the player and loads that island's state). */
+  enter(id: number, x: number, z: number, heading: number): void;
+  /** Starts over on the main island with fresh state. */
   newGame(): void;
 }
 
@@ -54,12 +62,12 @@ export class Save {
     if (!d) return false;
     const { clock, islands } = this.links;
     if (clock && Number.isFinite(d.clock)) clock.setTime(d.clock!);
-    islands.load(d.islands);
-    const cell = validCell(d.cell) ?? START_CELL;
+    const legacy = d.v === LEGACY_VERSION;
+    islands.load(d.islands, legacy);
     const x = Number.isFinite(d.x) ? d.x : 0;
     const z = Number.isFinite(d.z) ? d.z : 0;
     const heading = Number.isFinite(d.heading) ? d.heading : 0;
-    this.links.enter({ col: cell.col, row: cell.row }, x, z, heading);
+    this.links.enter(legacy ? legacyIsland(d.cell) : validIsland(d.island), x, z, heading);
     this.rig.yaw = finite(d.yaw, this.rig.yaw);
     this.rig.pitch = clamp(finite(d.pitch, this.rig.pitch), 0.15, 1.2);
     this.rig.distance = clamp(finite(d.distance, this.rig.distance), 5, 22);
@@ -75,7 +83,7 @@ export class Save {
     });
   }
 
-  /** Clears the save, all island progress, and moves the player and camera back to the start island's spawn. */
+  /** Clears the save, all island progress, and moves the player and camera back to the main island's spawn. */
   reset() {
     localStorage.removeItem(KEY);
     this.links.clock?.setTime(9);
@@ -89,7 +97,7 @@ export class Save {
     this.links.captureLive();
     const p = this.player.position;
     const data: SaveData = {
-      v: 1,
+      v: VERSION,
       x: p.x,
       z: p.z,
       heading: this.player.headingAngle,
@@ -97,7 +105,7 @@ export class Save {
       pitch: this.rig.pitch,
       distance: this.rig.distance,
       clock: this.links.clock?.time,
-      cell: { ...this.links.archipelago.cell },
+      island: this.links.archipelago.id,
       islands: this.links.islands.toJSON(),
     };
     try {
@@ -111,15 +119,21 @@ export class Save {
 function read(): SaveData | null {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-    return raw && raw.v === 1 ? (raw as SaveData) : null;
+    return raw && (raw.v === LEGACY_VERSION || raw.v === VERSION) ? (raw as SaveData) : null;
   } catch {
     return null;
   }
 }
 
-function validCell(c: Cell | undefined): Cell | null {
-  if (!c || !Number.isInteger(c.col) || !Number.isInteger(c.row)) return null;
-  return c.col >= 0 && c.col < COLS && c.row >= 0 && c.row < ROWS ? c : null;
+function validIsland(id: number | undefined): number {
+  return Number.isInteger(id) && id! >= 0 && id! < ISLAND_COUNT ? id! : MAIN_ID;
+}
+
+/** A version 1 save: its cell is a normal island if that cell is one now, otherwise the main island. */
+function legacyIsland(c: { col: number; row: number } | undefined): number {
+  if (!c || !Number.isInteger(c.col) || !Number.isInteger(c.row)) return MAIN_ID;
+  if (c.col < 0 || c.col >= LEGACY_COLS || c.row < 0 || c.row >= LEGACY_ROWS) return MAIN_ID;
+  return islandIdForLegacyCell(c.col, c.row);
 }
 
 function finite(v: number, fallback: number) {

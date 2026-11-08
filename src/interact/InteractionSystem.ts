@@ -7,7 +7,10 @@ const FACING_MIN = -0.2;
 
 /** Finds the nearest usable interactable in front of the player and runs it on E. */
 export class InteractionSystem {
-  private items: Interactable[] = [];
+  /** Always active (fishing and the like). */
+  private fixed: Interactable[] = [];
+  /** Belong to the live island: fruit trees, paddy, scarecrow. Replaced on each island switch. */
+  private island: Interactable[] = [];
   private promptEl = document.getElementById('prompt')!;
 
   constructor(
@@ -17,7 +20,16 @@ export class InteractionSystem {
   ) {}
 
   add(item: Interactable) {
-    this.items.push(item);
+    this.fixed.push(item);
+  }
+
+  /** The live island changed: its interactables replace the previous island's. */
+  setActive(items: Interactable[]) {
+    this.island = items;
+  }
+
+  private get items(): Interactable[] {
+    return this.island.length ? [...this.fixed, ...this.island] : this.fixed;
   }
 
   update(dt: number) {
