@@ -88,6 +88,28 @@ The pill under the island name shows the connection state:
 
 Direct (P2P) connections sometimes fail on certain networks, such as some office, school or VPN networks. A TURN relay can carry the traffic instead. To add one, create a TURN account (or run coturn yourself), then set the repo variable `TURN_URLS` (for example `turn:host:3478,turns:host:5349`) and the secrets `TURN_USERNAME` and `TURN_CREDENTIAL`. Note that credentials in a static site are public to anyone who loads the page, so use a free-tier or rate-limited credential. Add `?netdebug` to the URL to see connection details.
 
+### Self-hosted signalling relay
+
+The game includes `wss://denizakya.xyz/nostr` alongside public fallback relays. The relay configuration and pinned Docker image are in `relay/`. To recreate it on the host:
+
+```sh
+docker build -t nongkrong-nostr-relay relay
+docker run -d --name nongkrong-nostr-relay --restart unless-stopped \
+  --memory 256m --cpus 1 --pids-limit 128 \
+  -p 127.0.0.1:18080:8080 nongkrong-nostr-relay
+```
+
+To publish the game at `https://denizakya.xyz/nongkrong/`, build and copy its files to nginx's web root:
+
+```sh
+SELF_HOSTED=true npm run build
+sudo mkdir -p /var/www/nongkrong
+sudo cp -a dist/. /var/www/nongkrong/
+sudo restorecon -RF /var/www/nongkrong  # SELinux hosts
+```
+
+Add the contents of `relay/nginx-location.conf` inside the domain's existing HTTPS server block, then run `sudo nginx -t` and `sudo systemctl reload nginx`. Repeat the build and copy after game updates. On SELinux hosts nginx may need permission to connect to the upstream (`httpd_can_network_connect`). Ensure Cloudflare WebSockets are enabled if the domain is proxied. The relay is public, uses an in-memory database, and has global rate and container resource limits; monitor it for abuse. Restarting it loses stored events. This is signalling only, not a TURN server.
+
 ## Running locally
 
 Requires Node 22 or newer.

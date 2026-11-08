@@ -29,6 +29,7 @@ const FAKE_RADIUS = 4;
 const FAKE_SPEED = 2;
 /** Nostr relays used to find peers. Passed explicitly (full wss URLs) so one dead relay cannot stall joining. */
 export const RELAY_URLS = [
+  'wss://denizakya.xyz/nostr',
   'wss://nos.lol',
   'wss://relay.grigic.org',
   'wss://relay.degmods.com',
