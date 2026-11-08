@@ -134,8 +134,8 @@ export class Player {
     // Water and world-edge rule, checked per axis so the player slides along shorelines.
     const x = this.position.x;
     const z = this.position.z;
-    if (this.blocked(x + dx, z)) dx = 0;
-    if (this.blocked(x + dx, z + dz)) dz = 0;
+    if (!this.canMoveTo(x, z, x + dx, z)) dx = 0;
+    if (!this.canMoveTo(x + dx, z, x + dx, z + dz)) dz = 0;
 
     // Gravity: keep a small downward push while grounded so snap-to-ground works.
     this.vy = this.controller.computedGrounded() ? -1 : this.vy - GRAVITY * dt;
@@ -225,6 +225,12 @@ export class Player {
   /** True if a spot (local coordinates) is land, shallow water or a bridge. */
   isWalkable(x: number, z: number): boolean {
     return !this.blocked(x, z);
+  }
+
+  /** A player already in deep water can move uphill rather than being trapped by the shoreline rule. */
+  private canMoveTo(x: number, z: number, nextX: number, nextZ: number): boolean {
+    if (!this.blocked(nextX, nextZ)) return true;
+    return this.blocked(x, z) && this.terrain.heightAt(nextX, nextZ) >= this.terrain.heightAt(x, z) - 0.001;
   }
 
   private blocked(x: number, z: number) {

@@ -23,6 +23,7 @@ export class Environment {
   readonly waterNight: UniformNode<'float', number> = uniform(0);
   private depth: THREE.DataTexture;
   private water: THREE.Mesh;
+  private depthJob: { cx: number; cz: number; row: number; data: Uint8Array } | null = null;
 
   /** `heightAtWorld` gives the ground height at a world point, for the water depth window. */
   constructor(
@@ -65,7 +66,8 @@ export class Environment {
     this.sun.shadow.normalBias = 0.03;
     scene.add(this.sun, this.sun.target);
 
-    this.depth = new THREE.DataTexture(new Uint8Array(DEPTH_RES * DEPTH_RES), DEPTH_RES, DEPTH_RES, THREE.RedFormat, THREE.UnsignedByteType);
+    // Until the first depth map is ready, render water as deep rather than as a solid foam sheet.
+    this.depth = new THREE.DataTexture(new Uint8Array(DEPTH_RES * DEPTH_RES).fill(255), DEPTH_RES, DEPTH_RES, THREE.RedFormat, THREE.UnsignedByteType);
     this.depth.minFilter = THREE.LinearFilter;
     this.depth.magFilter = THREE.LinearFilter;
     this.depth.wrapS = this.depth.wrapT = THREE.ClampToEdgeWrapping;
@@ -78,28 +80,38 @@ export class Environment {
     scene.add(this.water);
   }
 
-  /**
-   * Rebuilds the water depth for the window centred on the live island's centre (world coordinates).
-   * Samples come from the registry, so neighbouring islands' shores show in the water too. Takes tens of ms.
-   */
+  /** Queue a water-depth rebuild, replacing any unfinished work for the previous island. */
   setWindow(cx: number, cz: number) {
-    const data = this.depth.image.data as Uint8Array;
+    this.depthJob = { cx, cz, row: 0, data: new Uint8Array(DEPTH_RES * DEPTH_RES) };
+  }
+
+  /** Spread depth sampling across frames and publish only a complete map. */
+  private updateDepth() {
+    const job = this.depthJob;
+    if (!job) return;
     const cell = WINDOW / DEPTH_RES;
     const half = WINDOW / 2;
-    for (let j = 0; j < DEPTH_RES; j++) {
-      const z = cz - half + (j + 0.5) * cell;
+    const end = Math.min(DEPTH_RES, job.row + 4);
+    for (let j = job.row; j < end; j++) {
+      const z = job.cz - half + (j + 0.5) * cell;
       for (let i = 0; i < DEPTH_RES; i++) {
-        const x = cx - half + (i + 0.5) * cell;
+        const x = job.cx - half + (i + 0.5) * cell;
         const h = this.heightAtWorld(x, z);
         const depth = Math.min(1, Math.max(0, (WATER_LEVEL - h) / MAX_DEPTH));
-        data[j * DEPTH_RES + i] = Math.round(depth * 255);
+        job.data[j * DEPTH_RES + i] = Math.round(depth * 255);
       }
     }
-    this.depth.needsUpdate = true;
+    job.row = end;
+    if (end === DEPTH_RES) {
+      (this.depth.image.data as Uint8Array).set(job.data);
+      this.depth.needsUpdate = true;
+      this.depthJob = null;
+    }
   }
 
   /** Keep the shadow frustum and sky centred on the player. */
   update(focus: THREE.Vector3, time: number) {
+    this.updateDepth();
     this.sun.target.position.copy(focus);
     this.sky.position.set(focus.x, 0, focus.z);
     this.water.position.y = WATER_LEVEL + Math.sin(time * 0.8) * 0.04;

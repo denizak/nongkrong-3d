@@ -1,7 +1,7 @@
 # Nongkrong 3D — Project Summary
 
 **Play:** https://denizak.github.io/nongkrong-3d/ · **Repo:** https://github.com/denizak/nongkrong-3d
-**Status:** live on GitHub Pages at commit `57853d3` (8 Nov 2026)
+**Hosting:** GitHub Pages, plus a self-hosted deployment at https://denizakya.xyz/nongkrong/ (see deployment instructions below).
 
 A cozy, low-poly 3D island game that runs in the browser. You play a small robot and explore a tropical archipelago of 50 islands joined by wooden bridges. You can shake mango trees, fish, harvest rice, poke scarecrows and relax by the campfire. Through peer-to-peer multiplayer you also see and chat with other players. The interface is in Bahasa Indonesia by default, and English is available.
 
@@ -31,7 +31,7 @@ A cozy, low-poly 3D island game that runs in the browser. You play a small robot
 - **Three.js r187** with `WebGPURenderer`, which falls back to WebGL2 automatically. Shaders use TSL node materials.
 - **TypeScript + Vite 8.** The entry bundle is about 130 KB. three.js and Rapier are split into their own chunks and load in parallel.
 - **Rapier** (`@dimforge/rapier3d-compat`): kinematic character controller, terrain trimesh, prop and bridge colliders. Loaded dynamically.
-- **Trystero** (Nostr signalling, WebRTC data channels): serverless P2P multiplayer, loaded after the game starts.
+- **Trystero** (Nostr signalling, WebRTC data channels): P2P multiplayer, loaded after the game starts. Discovery uses the self-hosted Nostr relay and public fallback relays.
 - **Web Audio API**: all music and ambience are synthesized in code, alongside a few CC0 samples.
 - **simplex-noise**: terrain generation.
 
@@ -58,7 +58,9 @@ Code size: 59 TypeScript files and about 12.5k lines, in `src/{world, player, in
 ## Deployment
 
 - A GitHub Actions workflow (`.github/workflows/deploy.yml`) builds with `GITHUB_PAGES=true` (base `/nongkrong-3d/`) and publishes to Pages on every push to `main`.
-- Deploy flow: commit on a branch, fast-forward `main`, `git push origin main`, wait about 1 minute for the site to go live.
+- Push to `main` to trigger the Pages workflow; check the Actions run for deployment status.
+- Run `./scripts/deploy.sh` as the normal user to test, build with base `/nongkrong/`, and copy the self-hosted site to `/var/www/nongkrong/`. It is not updated by the Pages workflow.
+- The Nostr relay runs in Docker on `127.0.0.1:18080`, with nginx proxying `wss://denizakya.xyz/nostr`. Configuration, nginx locations, SELinux notes and deployment commands are documented in `README.md` and `relay/`.
 
 ## Milestone history
 
@@ -73,7 +75,7 @@ Code size: 59 TypeScript files and about 12.5k lines, in `src/{world, player, in
 
 ## Known limitations and ideas for next steps
 
-- **Multiplayer:** a pure P2P mesh is practical for roughly 10–20 players, and strict networks can block WebRTC; a TURN relay would fix that. Fruit, rice and fish are per player, not shared. One public Nostr relay (`nostr.robosats.org`) currently fails to connect, which is harmless because the others work.
+- **Multiplayer:** a pure P2P mesh is practical for roughly 10–20 players. Strict networks can block direct WebRTC; a TURN server may be needed. Nostr relays provide signalling, not a TURN fallback, and an open relay socket alone does not prove peer connectivity. Fruit, rice and fish are per player, not shared.
 - **Poses:** the sit pose's feet sink about 0.37 m into the ground. Bench sitting and a campfire crackle sound aren't implemented.
 - **Bridges:** Pulau Nongkrong connects through only a couple of bridges, because the nearest islands are about 370 m away.
 - **Performance:** 60 fps on a MacBook. Not yet profiled on low-end phones. The rice paddy is the heaviest single item.

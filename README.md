@@ -72,7 +72,7 @@ Drag to orbit the camera and scroll to zoom.
 
 ## Multiplayer
 
-Players meet peer-to-peer: WebRTC connections, with public Nostr relays used only to find each other (via [Trystero](https://github.com/dmotz/trystero)). Everyone is in one shared world. You see other robots on your island and on the islands next to it, with their names and chat bubbles. Type `/name NewName` in the chat box to change your name, or set it on the loading screen.
+Players meet peer-to-peer over WebRTC. [Trystero](https://github.com/dmotz/trystero) uses the self-hosted Nostr relay and public fallback relays for discovery and signalling. Everyone is in one shared world. You see other robots on your island and on the islands next to it, with their names and chat bubbles. Type `/name NewName` in the chat box to change your name, or set it on the loading screen.
 
 Add `?solo` to the URL to play offline with no networking. Strict networks (some corporate or school firewalls) may block direct connections, in which case you simply won't see other players and the HUD shows the count.
 
@@ -90,7 +90,7 @@ Direct (P2P) connections sometimes fail on certain networks, such as some office
 
 ### Self-hosted signalling relay
 
-The game includes `wss://denizakya.xyz/nostr` alongside public fallback relays. The relay configuration and pinned Docker image are in `relay/`. To recreate it on the host:
+The game includes `wss://denizakya.xyz/nostr` alongside public fallback relays. The relay configuration and pinned Docker image are in `relay/`. On the Linux host, the container listens only on `127.0.0.1:18080`; nginx provides the public WebSocket endpoint. To create the container (skip `docker run` if it already exists):
 
 ```sh
 docker build -t nongkrong-nostr-relay relay
@@ -99,16 +99,19 @@ docker run -d --name nongkrong-nostr-relay --restart unless-stopped \
   -p 127.0.0.1:18080:8080 nongkrong-nostr-relay
 ```
 
-To publish the game at `https://denizakya.xyz/nongkrong/`, build and copy its files to nginx's web root:
+To publish the game at `https://denizakya.xyz/nongkrong/`, install dependencies with `npm ci` and run as the normal project user:
 
 ```sh
-SELF_HOSTED=true npm run build
-sudo mkdir -p /var/www/nongkrong
-sudo cp -a dist/. /var/www/nongkrong/
-sudo restorecon -RF /var/www/nongkrong  # SELinux hosts
+./scripts/deploy.sh
 ```
 
-Add the contents of `relay/nginx-location.conf` inside the domain's existing HTTPS server block, then run `sudo nginx -t` and `sudo systemctl reload nginx`. Repeat the build and copy after game updates. On SELinux hosts nginx may need permission to connect to the upstream (`httpd_can_network_connect`). Ensure Cloudflare WebSockets are enabled if the domain is proxied. The relay is public, uses an in-memory database, and has global rate and container resource limits; monitor it for abuse. Restarting it loses stored events. This is signalling only, not a TURN server.
+The script runs tests, builds with `SELF_HOSTED=true`, and uses sudo to copy the build to `/var/www/nongkrong/` and restore SELinux labels when available. It retains old hashed assets for cached pages; remove obsolete files separately when appropriate. It does not configure nginx or restart the relay.
+
+Add the contents of `relay/nginx-location.conf` **inside the existing HTTPS server block** in `/etc/nginx/conf.d/denizakya.xyz.conf`, preserving the other locations. Run `sudo nginx -t` and, only if it succeeds, `sudo systemctl reload nginx`. Repeat the build and copy after game updates; pushing to GitHub Pages does not update this self-hosted copy.
+
+Check the container with `docker ps --filter name=nongkrong-nostr-relay` and `docker logs nongkrong-nostr-relay`. Open `https://denizakya.xyz/nongkrong/?netdebug` in two clients to check relay status and actual peer connectivity. A WebSocket opening alone does not prove event delivery or WebRTC connectivity. If `/nostr` serves the landing page instead of the relay, check the nginx location and reload. On SELinux hosts nginx may need `httpd_can_network_connect` enabled. Ensure Cloudflare WebSockets are enabled if the domain is proxied.
+
+The relay is public, uses an in-memory database, and has global rate and container resource limits; monitor it for abuse. Restarting it loses stored events. This is signalling only, not a TURN server.
 
 ## Running locally
 

@@ -70,7 +70,11 @@ export class Proxies {
   update(current: number) {
     const here = centreOf(current);
     for (const def of ISLANDS) {
-      if (def.id === current) continue;
+      if (def.id === current) {
+        const existing = this.items.get(def.id);
+        if (existing) existing.object.visible = false;
+        continue;
+      }
       const inRange = inProxyWindow(current, def.id);
       if (!inRange && !this.items.has(def.id)) continue;
       const proxy = this.items.get(def.id) ?? this.make(def.id);
