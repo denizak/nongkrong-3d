@@ -92,6 +92,8 @@ export interface ShapeSpec {
   torchSpots?: Array<[number, number]>;
   /** True for a point that must stay free of props and vegetation (plaza, pier, ...). Set by the generator. */
   keepOut?: (x: number, z: number) => boolean;
+  /** The sandy beach, for the palm cap: z from which the sand starts, and the spots of the palms already placed on it. */
+  beach?: { fromZ: number; palmSpots: Array<[number, number]> };
 }
 
 export const NORMAL_SPEC: ShapeSpec = {

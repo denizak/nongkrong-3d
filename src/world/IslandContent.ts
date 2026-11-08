@@ -12,8 +12,8 @@ import { addProps, type Props } from './Props';
 import { addVegetation } from './Vegetation';
 import { Torches } from './Torches';
 import type { NatureAssets } from './Assets';
-import type { Bridges } from './Bridges';
 import type { IslandKind } from './Islands';
+import { Scatter } from './Scatter';
 import type { Terrains } from './Terrains';
 import { buildPlaza, type Campfire } from './Plaza';
 import { addBeach } from './Beach';
@@ -44,6 +44,8 @@ export interface IslandContent {
   interactables: Interactable[];
   /** The village campfire, main island only. */
   campfire: Campfire | null;
+  /** Scattered props and plants. Bridge corridors hide the ones on their landings while this island is live. */
+  scatter: Scatter;
 }
 
 export interface ContentDeps {
@@ -55,7 +57,6 @@ export interface ContentDeps {
   inventory: Inventory;
   camera: THREE.Camera;
   birds: Birds;
-  bridges: Bridges;
 }
 
 /**
@@ -63,7 +64,7 @@ export interface ContentDeps {
  * while it builds (physics.setActiveTags). The root is added to the scene but left hidden.
  */
 export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics: Physics): IslandContent {
-  const { terrains, assets, player, inventory, camera, birds, bridges } = deps;
+  const { terrains, assets, player, inventory, camera, birds } = deps;
   const terrain = terrains.of(kind);
   const spec = terrain.spec;
 
@@ -77,14 +78,14 @@ export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics:
   const terrainCollider = physics.addTerrain(terrain.mesh);
   physics.terrainCollider = terrainCollider;
 
-  const corridor = bridges.corridorFor(kind);
-  const props = addProps(root, terrain, physics, assets, corridor, spec);
-  addVegetation(root, terrain, assets, corridor, spec);
+  const scatter = new Scatter();
+  const props = addProps(root, terrain, physics, assets, scatter, spec);
+  addVegetation(root, terrain, assets, scatter, spec);
   // The main island's village: plaza with huts, fire and benches, and the beach with the pier's landing.
   let campfire: Campfire | null = null;
   if (kind === 'main') {
     campfire = buildPlaza(root, terrain as MainTerrain, physics, assets);
-    addBeach(root, terrain as MainTerrain, physics, assets);
+    addBeach(root, terrain as MainTerrain, physics, assets, scatter);
   }
   const torches = new Torches(root, terrain, physics, props, spec);
   const paddy = new PaddyField({
@@ -110,5 +111,6 @@ export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics:
     torches,
     interactables: [...fruitTrees, paddy, scarecrow],
     campfire,
+    scatter,
   };
 }

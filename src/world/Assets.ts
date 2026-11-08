@@ -131,8 +131,9 @@ export function instanceModel(
   model: NatureModel,
   matrices: THREE.Matrix4[],
   opts: { shadow?: boolean; wind?: number; jitter?: () => number } = {},
-) {
-  if (matrices.length === 0) return;
+): THREE.InstancedMesh[] {
+  const meshes: THREE.InstancedMesh[] = [];
+  if (matrices.length === 0) return meshes;
   for (const part of model.parts) {
     const material = WIND_ENABLED && opts.wind ? windMaterial(part.material.color, opts.wind) : part.material;
     const mesh = new THREE.InstancedMesh(part.geometry, material, matrices.length);
@@ -147,5 +148,7 @@ export function instanceModel(
     mesh.castShadow = !!opts.shadow;
     mesh.receiveShadow = !!opts.shadow;
     parent.add(mesh);
+    meshes.push(mesh);
   }
+  return meshes;
 }

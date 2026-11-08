@@ -94,6 +94,9 @@ const MAIN_SPEC: ShapeSpec = {
   torchSpots: torchSpots(),
 };
 
+/** The three palms that lean out over the south beach (see Beach.ts), by x. */
+export const LEANING_PALM_X = [-64, -40, 46];
+
 /** Terrain for the main island. Its local origin is the island centre. */
 export class MainTerrain extends Terrain {
   /** Local z of the shore straight south of the centre: the pier's landing. */
@@ -103,6 +106,10 @@ export class MainTerrain extends Terrain {
     super(MAIN_SPEC);
     this.spec.keepOut = (x, z) => this.keptOut(x, z);
     this.pierShoreZ = this.shoreZ(0);
+    this.spec.beach = {
+      fromZ: BEACH_Z - 5,
+      palmSpots: LEANING_PALM_X.map((x): [number, number] => [x, this.shoreZ(x) - 9]),
+    };
   }
 
   /** First point going south from (x, BEACH_Z) where the ground drops below the coast height. */

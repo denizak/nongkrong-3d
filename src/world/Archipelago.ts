@@ -1,4 +1,4 @@
-import { ISLANDS, MAIN_ID, NORMAL_COUNT, centreOf, islandAt, ownerOfCell, type IslandDef } from './Islands';
+import { ISLANDS, MAIN_ID, NORMAL_COUNT, centreOf, islandAt, legacyOwnerOfCell, type IslandDef } from './Islands';
 
 /** Where the player crossed into a neighbour, and the offset to apply to their local position. */
 export interface ShiftInfo {
@@ -7,10 +7,10 @@ export interface ShiftInfo {
   dz: number;
 }
 
-/** Visited islands, by the registry's ids. Version 2; version 1 stored ids of the old grid. */
+/** Visited islands, by the registry's ids. Version 2; version 1 stored ids of the old grid (see Islands.ts). */
 const VISITED_KEY = 'nongkrong.visited2';
 const LEGACY_VISITED_KEY = 'nongkrong.visited';
-/** The old grid was 5 columns wide; its ids were row * 5 + col + 1. */
+/** The oldest grid was 5 columns wide; its ids were row * 5 + col + 1. */
 const LEGACY_COLS = 5;
 
 /**
@@ -73,12 +73,6 @@ export class Archipelago {
     this.switchTo(id, 0, 0);
   }
 
-  /** Dev helper: teleports to the island on a grid cell (the main island's block counts as its cells). */
-  teleport(col: number, row: number) {
-    const id = ownerOfCell(col, row);
-    if (id === null) throw new Error(`No island at col ${col}, row ${row}`);
-    this.teleportTo(id);
-  }
 }
 
 /** Per-island progress that survives leaving the island. Plain data so it can be saved as JSON. */
@@ -147,7 +141,7 @@ export class IslandStates {
 function legacyId(oldId: number): number | null {
   const col = (oldId - 1) % LEGACY_COLS;
   const row = Math.floor((oldId - 1) / LEGACY_COLS);
-  const id = ownerOfCell(col, row);
+  const id = legacyOwnerOfCell(col, row);
   return id !== null && id !== MAIN_ID ? id : null;
 }
 

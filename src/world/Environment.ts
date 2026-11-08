@@ -10,8 +10,8 @@ const FOG = new THREE.Color('#bfe7f7');
 
 /** Water depth (m) at which the depth map saturates. */
 const MAX_DEPTH = 6;
-/** The depth map covers a square window of this side (m), centred on the live island. */
-const WINDOW = 760;
+/** The depth map covers a square window of this side (m), centred on the live island. Matches the water plane. */
+const WINDOW = 900;
 const DEPTH_RES = 512;
 
 /** Sky dome, sun + fill light, toon water and fog. DayNight drives the colours and the sun direction. */

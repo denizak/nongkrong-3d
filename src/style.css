@@ -30,16 +30,24 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
 }
 #prompt.show { opacity: 1; }
 
-/* Inventory bar, top centre: one row across the free band between the top-left column and the right edge.
-   Both sides reserve the same width (the --hud-col edge set by IslandPill), so the row stays centred. */
+/* Inventory bar: one centred row that wraps, in the band from the top-left pill column (the --hud-col edge set by
+   IslandPill) to the minimap's left edge (150 px minimap, 16 px margin, 16 px gap). The sound and language pills and
+   the minimap sit at the right, so the row must stop short of them from its second line down. Centred in that band,
+   it wraps across lines instead of stacking one pill per line. */
 #inventory {
   position: fixed; top: 16px;
-  left: calc(var(--hud-col, 0px) + 12px); right: calc(var(--hud-col, 0px) + 12px);
+  left: calc(var(--hud-col, 0px) + 12px); right: 182px;
   display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; gap: 8px; pointer-events: none;
   opacity: 0; transition: opacity 0.3s ease;
 }
+/* Narrow desktop windows: the pill column leaves too little room beside the minimap, so the row drops below the
+   column and keeps the same right edge. Touch layouts are set in touch.css and keep their own positions. */
+@media (min-width: 600px) and (max-width: 759px) {
+  #inventory { top: 140px; left: 16px; }
+}
 #inventory.show { opacity: 1; }
 #inventory .slot {
+  flex: 0 1 auto;
   padding: 6px 12px; border-radius: 999px; white-space: nowrap;
   font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
   background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);

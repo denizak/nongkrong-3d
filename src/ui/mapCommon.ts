@@ -66,8 +66,8 @@ export function drawBridges(
   ctx.lineWidth = width;
   ctx.beginPath();
   for (const l of layouts) {
-    const a = l.axis === 'x' ? toPx(l.p0, l.lateral) : toPx(l.lateral, l.p0);
-    const b = l.axis === 'x' ? toPx(l.p1, l.lateral) : toPx(l.lateral, l.p1);
+    const a = toPx(l.from.x, l.from.z);
+    const b = toPx(l.to.x, l.to.z);
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
   }

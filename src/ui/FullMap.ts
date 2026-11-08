@@ -1,13 +1,18 @@
 import './map.css';
 import { t } from '../i18n';
-import { COLS, ISLANDS, ROWS, SPACING, MAIN_ID, displayName, type IslandKind } from '../world/Islands';
+import { ISLANDS, MAIN_ID, MAP_BOUNDS, displayName, nearestDistance, type IslandKind } from '../world/Islands';
 import type { IslandShapes } from '../world/IslandShapes';
 import type { Input } from '../core/Input';
 import { SEA, drawArrow, drawBridges, drawDot, drawLabel, drawShapes, localWorld, remoteMarks } from './mapCommon';
 import type { MapWorld } from './Minimap';
 
-/** The whole grid in metres: cell centres sit on multiples of SPACING, so the grid runs half a cell past each edge. */
-const GRID = { x0: -SPACING / 2, z0: -SPACING / 2, w: COLS * SPACING, h: ROWS * SPACING };
+/** The whole archipelago in metres, from the islands' extents plus a margin (see MAP_BOUNDS). */
+const GRID = {
+  x0: MAP_BOUNDS.x0,
+  z0: MAP_BOUNDS.z0,
+  w: MAP_BOUNDS.x1 - MAP_BOUNDS.x0,
+  h: MAP_BOUNDS.z1 - MAP_BOUNDS.z0,
+};
 /** Panel chrome around the canvas, in CSS px: side padding and border, header and legend. */
 const CHROME_W = 28 + 12;
 const CHROME_H = 110;
@@ -192,7 +197,6 @@ export class FullMap {
    * earlier label is left off the map (its centre shows the name on hover instead).
    */
   private drawNames(g: CanvasRenderingContext2D, visited: ReadonlySet<number>, toPx: (x: number, z: number) => { x: number; y: number }) {
-    const gap = SPACING * this.k;
     const placed: Array<{ x0: number; x1: number; y0: number; y1: number }> = [];
     this.hiddenNames = [];
     const order = [...ISLANDS].sort((a, b) => (a.id === MAIN_ID ? -1 : b.id === MAIN_ID ? 1 : a.id - b.id));
@@ -200,6 +204,8 @@ export class FullMap {
       const p = toPx(def.centerWorld.x, def.centerWorld.z);
       const main = def.id === MAIN_ID;
       const font = main ? '800 14px system-ui, sans-serif' : '600 10px system-ui, sans-serif';
+      // The room a name has: the distance to this island's nearest neighbour.
+      const gap = nearestDistance(def.id) * this.k;
       let name = displayName(def.id);
       g.font = font;
       if (!main && g.measureText(name).width > gap - 6 && name.startsWith('Pulau ')) name = name.slice(6);

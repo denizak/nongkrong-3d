@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu';
 import type { Physics } from '../core/Physics';
 import type { Layout } from './Bridges';
-import { instanceModel, type NatureAssets, type NatureName } from './Assets';
+import type { NatureAssets, NatureName } from './Assets';
 import { bakeStatic } from './Bake';
 import type { MainTerrain } from './MainTerrain';
+import { LEANING_PALM_X } from './MainTerrain';
 import { MAIN_CENTRE, MAIN_ID } from './Islands';
+import type { Scatter } from './Scatter';
 
 /** Deck height (m) of the pier, above the sea. */
 const PIER_H = 0.9;
@@ -21,10 +23,8 @@ export function pierLayout(terrain: MainTerrain): Layout {
   return {
     id: 'pier',
     islands: [MAIN_ID, MAIN_ID],
-    axis: 'z',
-    lateral: MAIN_CENTRE.x,
-    p0: MAIN_CENTRE.z + s - PIER_IN,
-    p1: MAIN_CENTRE.z + s + PIER_OUT,
+    from: { x: MAIN_CENTRE.x, z: MAIN_CENTRE.z + s - PIER_IN },
+    to: { x: MAIN_CENTRE.x, z: MAIN_CENTRE.z + s + PIER_OUT },
     h0: PIER_H,
     h1: PIER_H,
     arch: 0,
@@ -38,8 +38,11 @@ const TOWEL_COLOURS = ['#4aa3df', '#ff8fab'];
 const BOAT_COLOUR = '#2f6fa0';
 const TILT_SEA = 0.2;
 
-/** Beach dressing on the south side: three palms leaning to sea, rocks, loungers, towels and an upturned boat. */
-export function addBeach(root: THREE.Group, terrain: MainTerrain, physics: Physics, assets: NatureAssets) {
+/**
+ * Beach dressing on the south side: three palms leaning to sea, rocks, loungers, towels and an upturned boat.
+ * The palms and rocks go through `scatter`, so the bridge corridors can hide them.
+ */
+export function addBeach(root: THREE.Group, terrain: MainTerrain, physics: Physics, assets: NatureAssets, scatter: Scatter) {
   const { ColliderDesc } = physics.RAPIER;
   const rand = (() => {
     let seed = 77;
@@ -50,31 +53,26 @@ export function addBeach(root: THREE.Group, terrain: MainTerrain, physics: Physi
   })();
 
   // Palms on the sand, tilted toward the sea (+z), each with a trunk collider.
-  const palmMats = new Map<NatureName, THREE.Matrix4[]>();
-  for (const x of [-64, -40, 46]) {
+  for (const x of LEANING_PALM_X) {
     const z = terrain.shoreZ(x) - 9;
     const y = terrain.heightAt(x, z);
     const h = 6.5 + rand();
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), TILT_SEA);
     const name = PALM_NAMES[Math.floor(rand() * PALM_NAMES.length)];
-    if (!palmMats.has(name)) palmMats.set(name, []);
-    palmMats.get(name)!.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h, h, h)));
-    physics.addStatic(ColliderDesc.cylinder(h * 0.4, 0.3), x, y + h * 0.4, z);
+    const inst = scatter.add(name, new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h, h, h)), x, z);
+    inst.colliders.push(physics.addStatic(ColliderDesc.cylinder(h * 0.4, 0.3), x, y + h * 0.4, z));
   }
-  for (const [name, mats] of palmMats) instanceModel(root, assets[name], mats, { shadow: true, wind: 0 });
 
   // Beach rocks, a few, half-buried in the sand near the waterline.
-  const rocks = new Map<NatureName, THREE.Matrix4[]>();
   for (const x of [-100, -82, -18, 14, 62, 96]) {
     const z = terrain.shoreZ(x) - 2 - rand() * 3;
     const y = terrain.heightAt(x, z);
     const h = 0.6 + rand() * 0.9;
     const name = ROCK_NAMES[Math.floor(rand() * ROCK_NAMES.length)];
-    if (!rocks.has(name)) rocks.set(name, []);
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * Math.PI * 2);
-    rocks.get(name)!.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y - 0.1 * h, z), q, new THREE.Vector3(h, h, h)));
+    scatter.add(name, new THREE.Matrix4().compose(new THREE.Vector3(x, y - 0.1 * h, z), q, new THREE.Vector3(h, h, h)), x, z);
   }
-  for (const [name, mats] of rocks) instanceModel(root, assets[name], mats, { shadow: true });
+  scatter.flush(root, assets, () => ({ shadow: true }));
 
   // Loungers, towels and the boat go into a temporary group and bake into the root.
   const raw = new THREE.Group();

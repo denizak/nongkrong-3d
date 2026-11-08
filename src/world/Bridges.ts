@@ -3,8 +3,9 @@ import type { Physics } from '../core/Physics';
 import type RAPIER from '@dimforge/rapier3d-compat';
 import { COAST_H, mulberry32 } from './Terrain';
 import { MeshBaker } from './Bake';
-import { COLS, ISLANDS, ROWS, SPACING, centreOf, inProxyWindow, ownerOfCell, type IslandKind, type Vec2 } from './Islands';
+import { ISLANDS, centreOf, inProxyWindow, type Vec2 } from './Islands';
 import type { Terrains } from './Terrains';
+import { distToSegment, gabrielEdges, segmentsCross, spanningTree, type Pair } from './Network';
 
 const DECK_W = 3;
 const DECK_HALF = DECK_W / 2;
@@ -12,9 +13,14 @@ const DECK_HALF = DECK_W / 2;
 const ARCH = 1;
 /** The deck starts this far inland of the coast. */
 const LANDING_INSET = 4;
-/** Keep-clear corridor: 12 m inland from each landing, this far either side of the axis. */
+/** Keep-clear rectangle on each island: 14 m inland of a landing and 2 m past it, 5 m wide. */
 const CORRIDOR_HALF = 2.5;
-const CORRIDOR_INLAND = 12;
+const CORRIDOR_INLAND = 14;
+const CORRIDOR_SEAWARD = 2;
+/** Coast to coast, a bridge may be at most this long (m). The spanning tree is kept whatever its length. */
+const MAX_BRIDGE = 170;
+/** A bridge may not pass this close to a third island's centre (m). */
+const NEAR_ISLAND = 70;
 const PLANK_W = 0.32;
 const PLANK_GAP = 0.04;
 const PLANK_T = 0.12;
@@ -38,32 +44,36 @@ const RAIL_COLLIDER_H = 0.6;
 const WALK_HALF = 1.6;
 const WALK_MARGIN = 0.5;
 /** Bridges are drawn while one of their two islands is within the proxy window. */
-const COAST_SEARCH = 250;
-
-export type Axis = 'x' | 'z';
+const SHORE_STEP = 0.25;
 
 /**
- * One bridge, in world coordinates. The deck runs from p0 to p1 along `axis`, on the line at `lateral`
- * across it. `islands` are the two islands it joins.
+ * One bridge, in world coordinates. The deck runs in a straight line from `from` to `to` (any angle), at the
+ * heights h0 and h1 at its ends. `islands` are the two islands it joins; a pier joins an island to itself.
  */
 export interface Layout {
   id: string;
   islands: [number, number];
-  axis: Axis;
-  lateral: number;
-  p0: number;
-  p1: number;
+  from: Vec2;
+  to: Vec2;
   h0: number;
   h1: number;
   /** Mid-span arch (m). Defaults to ARCH; a pier lies flat with 0. */
   arch?: number;
 }
 
-interface Rect {
-  x0: number;
-  x1: number;
-  z0: number;
-  z1: number;
+/** A bridge's direction: unit vector from `from` to `to`, and its length. */
+interface Frame {
+  ux: number;
+  uz: number;
+  len: number;
+}
+
+/** A keep-clear rectangle on one island, in its local frame: the landing and the outward direction from it. */
+interface Corridor {
+  x: number;
+  z: number;
+  wx: number;
+  wz: number;
 }
 
 interface DeckPoint {
@@ -73,46 +83,40 @@ interface DeckPoint {
   q: THREE.Quaternion;
 }
 
-/**
- * Distance from `(ox, oz)` along (dx, dz) to the shore: the first point below the coast height that stays
- * below it for `sustain` metres. A sustain of 0 takes the first such point (the normal islands' original rule).
- * The main island's noise has bumps that dip under the coast height inside the land, so it uses 6 m.
- */
-function coastFrom(ground: (x: number, z: number) => number, ox: number, oz: number, dx: number, dz: number, sustain = 0): number {
-  for (let d = 0; d <= COAST_SEARCH; d += 0.25) {
-    if (ground(ox + dx * d, oz + dz * d) >= COAST_H) continue;
-    let sea = true;
-    for (let s = 0.25; s <= sustain && sea; s += 0.25) sea = ground(ox + dx * (d + s), oz + dz * (d + s)) < COAST_H;
-    if (sea) return d;
-  }
-  return COAST_SEARCH;
+/** A bridge candidate on a Gabriel edge, with its landings and coast points in world coordinates. */
+interface Candidate {
+  a: number;
+  b: number;
+  from: Vec2;
+  to: Vec2;
+  h0: number;
+  h1: number;
+  /** Coast-to-coast length (m). */
+  cc: number;
+  coastA: Vec2;
+  coastB: Vec2;
 }
 
-/** Sustain (m) for a kind's shore: see coastFrom. */
-const sustainOf = (kind: IslandKind) => (kind === 'main' ? MAIN_SUSTAIN : 0);
-const MAIN_SUSTAIN = 6;
+const frameOf = (l: Layout): Frame => {
+  const dx = l.to.x - l.from.x;
+  const dz = l.to.z - l.from.z;
+  const len = Math.hypot(dx, dz);
+  return { ux: dx / len, uz: dz / len, len };
+};
 
-/** Keep-clear rectangle for a landing `d` metres from the centre, in direction (dx, dz) at lateral offset `lat`. */
-function landingRect(dx: number, dz: number, d: number, lat: number): Rect {
-  const h = CORRIDOR_HALF;
-  if (dx > 0) return { x0: d - LANDING_INSET - CORRIDOR_INLAND, x1: d + 2, z0: lat - h, z1: lat + h };
-  if (dx < 0) return { x0: -(d + 2), x1: -(d - LANDING_INSET - CORRIDOR_INLAND), z0: lat - h, z1: lat + h };
-  if (dz > 0) return { x0: lat - h, x1: lat + h, z0: d - LANDING_INSET - CORRIDOR_INLAND, z1: d + 2 };
-  return { x0: lat - h, x1: lat + h, z0: -(d + 2), z1: -(d - LANDING_INSET - CORRIDOR_INLAND) };
-}
-
-const DIRS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const pairKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 
 /**
- * Wooden bridges between edge-adjacent islands, all built once in world coordinates. Normal-normal bridges
- * run along the line through both centres. A main-normal bridge runs along the line through the normal
- * island's centre, so the main island gets up to two per side. Bridges touching the live island get
- * physics colliders in its local frame, and the whole set is drawn offset by minus the live centre.
+ * Wooden bridges between islands, built once in world coordinates. The bridges form a planar graph: a Gabriel
+ * graph over the island centres, reduced to its Euclidean minimum spanning tree plus the shorter Gabriel edges
+ * that cross nothing and pass clear of other islands. Each bridge runs straight between its two islands, at any
+ * angle. A bridge touching the live island gets physics colliders in its local frame, and the whole set is drawn
+ * offset by minus the live centre.
  */
 export class Bridges {
   readonly root = new THREE.Group();
   readonly layouts: Layout[];
-  private corridors: Record<IslandKind, Rect[]>;
+  private corridors = new Map<number, Corridor[]>();
   private groups: THREE.Group[] = [];
   private active: Layout[] = [];
   private colliders: RAPIER.Collider[] = [];
@@ -135,10 +139,7 @@ export class Bridges {
     parent.add(this.root);
 
     this.layouts = this.buildLayouts();
-    this.corridors = {
-      normal: this.landingRects('normal'),
-      main: this.landingRects('main'),
-    };
+    for (const l of this.layouts) this.addCorridors(l);
 
     this.flameOuter = new THREE.MeshBasicMaterial({
       color: '#ff8a2a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0,
@@ -169,10 +170,20 @@ export class Bridges {
     this.buildDeck(g, l, this.layouts.length);
   }
 
-  /** The keep-clear test for props and vegetation on a kind of island, in that island's local frame. */
-  corridorFor(kind: IslandKind): (x: number, z: number) => boolean {
-    const rects = this.corridors[kind];
-    return (x, z) => rects.some((r) => x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1);
+  /**
+   * The keep-clear test for an island's props and vegetation: true inside one of its bridge corridors. Takes a
+   * point in that island's local frame.
+   */
+  corridorsOf(id: number): (x: number, z: number) => boolean {
+    const list = this.corridors.get(id) ?? [];
+    return (x, z) =>
+      list.some((c) => {
+        const rx = x - c.x;
+        const rz = z - c.z;
+        const along = rx * c.wx + rz * c.wz;
+        const across = -rx * c.wz + rz * c.wx;
+        return along >= -CORRIDOR_INLAND && along <= CORRIDOR_SEAWARD && Math.abs(across) <= CORRIDOR_HALF;
+      });
   }
 
   /** True when (x, z), in the live island's local frame, is on one of its bridges. */
@@ -180,11 +191,12 @@ export class Bridges {
     const wx = x + this.centre.x;
     const wz = z + this.centre.z;
     for (const l of this.active) {
-      const lo = Math.min(l.p0, l.p1) - WALK_MARGIN;
-      const hi = Math.max(l.p0, l.p1) + WALK_MARGIN;
-      const a = l.axis === 'x' ? wx : wz;
-      const b = l.axis === 'x' ? wz : wx;
-      if (a >= lo && a <= hi && Math.abs(b - l.lateral) <= WALK_HALF) return true;
+      const f = frameOf(l);
+      const rx = wx - l.from.x;
+      const rz = wz - l.from.z;
+      const along = rx * f.ux + rz * f.uz;
+      const across = -rx * f.uz + rz * f.ux;
+      if (along >= -WALK_MARGIN && along <= f.len + WALK_MARGIN && Math.abs(across) <= WALK_HALF) return true;
     }
     return false;
   }
@@ -214,86 +226,124 @@ export class Bridges {
     this.flameInner.opacity = night;
   }
 
-  /** Every bridge, joining each pair of edge-adjacent islands once. */
+  /**
+   * Every bridge in the world. Candidates are the Gabriel edges, each with its landings found on the terrain.
+   * The spanning tree is always kept. Of the other candidates, the ones within MAX_BRIDGE (coast to coast) go in
+   * shortest first, unless they pass near a third island or cross a bridge already kept.
+   */
   private buildLayouts(): Layout[] {
-    const out: Layout[] = [];
-    const pair = (c1: number, r1: number, c2: number, r2: number, axis: Axis) => {
-      const a = ownerOfCell(c1, r1);
-      const b = ownerOfCell(c2, r2);
-      if (a === null || b === null || a === b) return;
-      const A = centreOf(a);
-      const B = centreOf(b);
-      // Both cells share a row (x bridges) or a column (z bridges); the line runs through the normal island's centre.
-      const lateral = axis === 'x' ? r1 * SPACING : c1 * SPACING;
-      const oA = axis === 'x' ? { x: A.x, z: lateral } : { x: lateral, z: A.z };
-      const oB = axis === 'x' ? { x: B.x, z: lateral } : { x: lateral, z: B.z };
-      const [dx, dz] = axis === 'x' ? [1, 0] : [0, 1];
-      const dA = coastFrom(this.terrains.heightAtWorld, oA.x, oA.z, dx, dz, sustainOf(ISLANDS[a].kind));
-      const dB = coastFrom(this.terrains.heightAtWorld, oB.x, oB.z, -dx, -dz, sustainOf(ISLANDS[b].kind));
-      const along = (p: Vec2) => (axis === 'x' ? p.x : p.z);
-      const p0 = along(A) + dA - LANDING_INSET;
-      const p1 = along(B) - dB + LANDING_INSET;
-      const at = (t: number) => (axis === 'x' ? { x: t, z: lateral } : { x: lateral, z: t });
-      const q0 = at(p0);
-      const q1 = at(p1);
-      out.push({
-        id: `${a}-${b}`,
-        islands: [a, b],
-        axis,
-        lateral,
-        p0,
-        p1,
-        h0: this.terrains.heightAtWorld(q0.x, q0.z),
-        h1: this.terrains.heightAtWorld(q1.x, q1.z),
-      });
-    };
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        pair(c, r, c + 1, r, 'x');
-        pair(c, r, c, r + 1, 'z');
-      }
+    const pts = ISLANDS.map((d) => d.centerWorld);
+    const candidates = gabrielEdges(pts).map(([a, b]) => this.candidate(a, b));
+    const byKey = new Map(candidates.map((c) => [pairKey(c.a, c.b), c]));
+
+    const tree = spanningTree(pts.length, candidates.map((c): Pair => [c.a, c.b]), ([a, b]) => Math.hypot(pts[b].x - pts[a].x, pts[b].z - pts[a].z));
+    const inTree = new Set(tree.map(([a, b]) => pairKey(a, b)));
+    const kept: Candidate[] = tree.map(([a, b]) => byKey.get(pairKey(a, b))!);
+
+    const nearThirdIsland = (c: Candidate) =>
+      pts.some((p, k) => k !== c.a && k !== c.b && distToSegment(p, pts[c.a], pts[c.b]) < NEAR_ISLAND);
+    for (const c of kept) {
+      if (nearThirdIsland(c)) console.warn(`Bridge ${c.a}-${c.b} (spanning tree) passes near another island`);
     }
-    return out;
+
+    const extras = candidates
+      .filter((c) => !inTree.has(pairKey(c.a, c.b)) && c.cc <= MAX_BRIDGE)
+      .sort((p, q) => p.cc - q.cc);
+    const tooLong = candidates.filter((c) => !inTree.has(pairKey(c.a, c.b)) && c.cc > MAX_BRIDGE).length;
+    let near = 0;
+    let crossing = 0;
+    let added = 0;
+    for (const c of extras) {
+      if (nearThirdIsland(c)) {
+        near++;
+        continue;
+      }
+      if (kept.some((o) => segmentsCross(c.coastA, c.coastB, o.coastA, o.coastB))) {
+        crossing++;
+        continue;
+      }
+      kept.push(c);
+      added++;
+    }
+    if (import.meta.env.DEV) {
+      console.info(
+        `Bridges: ${kept.length} total = ${tree.length} spanning tree + ${added} extra; dropped ${near + crossing + tooLong} `
+          + `(${tooLong} too long, ${near} near a third island, ${crossing} crossing)`,
+      );
+    }
+    return kept.map((c) => ({ id: `${c.a}-${c.b}`, islands: [c.a, c.b], from: c.from, to: c.to, h0: c.h0, h1: c.h1 }));
   }
 
-  /** Corridors where each kind's bridges can land. The main island has a landing per side at each of two offsets. */
-  private landingRects(kind: IslandKind): Rect[] {
-    const terrain = this.terrains.of(kind);
-    const ground = (x: number, z: number) => terrain.heightAt(x, z);
-    const offsets = kind === 'main' ? [-SPACING / 2, SPACING / 2] : [0];
-    const out: Rect[] = [];
-    for (const [dx, dz] of DIRS) {
-      for (const lat of offsets) {
-        const ox = dz !== 0 ? lat : 0;
-        const oz = dx !== 0 ? lat : 0;
-        const d = coastFrom(ground, ox, oz, dx, dz, sustainOf(kind));
-        out.push(landingRect(dx, dz, d, lat));
-      }
+  /** The bridge between islands a and b, from the outermost land on each side along the line between them. */
+  private candidate(a: number, b: number): Candidate {
+    const A = ISLANDS[a].centerWorld;
+    const B = ISLANDS[b].centerWorld;
+    const len = Math.hypot(B.x - A.x, B.z - A.z);
+    const ux = (B.x - A.x) / len;
+    const uz = (B.z - A.z) / len;
+    const dA = this.shoreAlong(a, ux, uz, len / 2);
+    const dB = this.shoreAlong(b, -ux, -uz, len / 2);
+    const inA = dA - LANDING_INSET;
+    const inB = dB - LANDING_INSET;
+    return {
+      a,
+      b,
+      from: { x: A.x + ux * inA, z: A.z + uz * inA },
+      to: { x: B.x - ux * inB, z: B.z - uz * inB },
+      h0: this.terrains.of(ISLANDS[a].kind).heightAt(ux * inA, uz * inA),
+      h1: this.terrains.of(ISLANDS[b].kind).heightAt(-ux * inB, -uz * inB),
+      cc: len - dA - dB,
+      coastA: { x: A.x + ux * dA, z: A.z + uz * dA },
+      coastB: { x: B.x - ux * dB, z: B.z - uz * dB },
+    };
+  }
+
+  /**
+   * Distance from island `id`'s centre to its outermost land along (ux, uz), searched no further than `maxD`.
+   * Looking from the outside in finds the outer shore, so ponds and dips inside the island are not taken for it.
+   */
+  private shoreAlong(id: number, ux: number, uz: number, maxD: number): number {
+    const ground = this.terrains.of(ISLANDS[id].kind);
+    for (let d = maxD - SHORE_STEP; d > 0; d -= SHORE_STEP) {
+      if (ground.heightAt(ux * d, uz * d) >= COAST_H) return d;
     }
-    return out;
+    return 0;
+  }
+
+  /** Records the landings of a bridge as keep-clear corridors on both of its islands. Pier layouts have none. */
+  private addCorridors(l: Layout) {
+    const [a, b] = l.islands;
+    if (a === b) return;
+    const f = frameOf(l);
+    this.addCorridor(a, l.from, f.ux, f.uz);
+    this.addCorridor(b, l.to, -f.ux, -f.uz);
+  }
+
+  private addCorridor(id: number, end: Vec2, wx: number, wz: number) {
+    const c = centreOf(id);
+    const list = this.corridors.get(id) ?? [];
+    list.push({ x: end.x - c.x, z: end.z - c.z, wx, wz });
+    this.corridors.set(id, list);
   }
 
   /** Centre-line frame at arc length s: top surface point, normal, lateral unit vector and an orientation quaternion. */
   private deckAt(l: Layout, s: number): DeckPoint {
-    const L = Math.abs(l.p1 - l.p0);
-    const sgn = Math.sign(l.p1 - l.p0);
+    const f = frameOf(l);
+    const L = f.len;
     const t = s / L;
-    const a = l.p0 + sgn * s;
     const arch = l.arch ?? ARCH;
     const h = THREE.MathUtils.lerp(l.h0, l.h1, t) + arch * Math.sin(Math.PI * t);
     const dhds = (l.h1 - l.h0) / L + (arch * Math.PI * Math.cos(Math.PI * t)) / L;
-    const isX = l.axis === 'x';
-    const u = isX ? new THREE.Vector3(sgn, 0, 0) : new THREE.Vector3(0, 0, sgn);
-    const v = isX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);
-    const top = isX ? new THREE.Vector3(a, h, l.lateral) : new THREE.Vector3(l.lateral, h, a);
-    const n = new THREE.Vector3(-dhds * u.x, 1, -dhds * u.z).normalize();
+    const top = new THREE.Vector3(l.from.x + f.ux * s, h, l.from.z + f.uz * s);
+    const v = new THREE.Vector3(-f.uz, 0, f.ux);
+    const n = new THREE.Vector3(-dhds * f.ux, 1, -dhds * f.uz).normalize();
     const z = new THREE.Vector3().crossVectors(v, n);
     const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(v, n, z));
     return { top, n, v, q };
   }
 
   private buildDeck(parent: THREE.Group, l: Layout, seedSalt: number) {
-    const L = Math.abs(l.p1 - l.p0);
+    const L = frameOf(l).len;
     const rand = mulberry32(1000 + seedSalt * 77);
     const sideOffset = (d: DeckPoint, side: number) => d.top.clone().addScaledVector(d.v, side * POST_OFFSET);
     // Static parts are baked into a few meshes: the planks, and one frame mesh for posts, ropes and lantern cups.
@@ -399,7 +449,7 @@ export class Bridges {
   /** Deck, side rails as thin colliders, one set per segment that follows the arch. Positions are local to the live centre. */
   private addColliders(l: Layout) {
     const { ColliderDesc } = this.physics.RAPIER;
-    const L = Math.abs(l.p1 - l.p0);
+    const L = frameOf(l).len;
     const segs = Math.max(COLLIDER_SEGS, Math.ceil(L / COLLIDER_SEG_LEN));
     const segHalf = L / segs / 2 + 0.15;
     const world = this.physics.world;
@@ -423,4 +473,3 @@ export class Bridges {
     }
   }
 }
-

@@ -148,7 +148,7 @@ async function boot() {
   for (const kind of ['normal', 'main'] as const) {
     physics.setActiveTags(new Set([kind]));
     contents[kind] = buildIslandContent(kind, {
-      terrains, physics, assets, scene, player, inventory, camera, birds, bridges,
+      terrains, physics, assets, scene, player, inventory, camera, birds,
     }, physics);
   }
   loading.setProgress(0.9, t('loading.almost'));
@@ -222,6 +222,8 @@ async function boot() {
     if (opts.capture ?? booted) islands.set(archipelago.id, captureLive());
 
     const next = contents[def.kind];
+    // The old island's props on bridge landings come back before its colliders are switched off below.
+    live.scatter.setHidden(null);
     live = next;
     archipelago.setCurrent(id);
     contents.normal.root.visible = def.kind === 'normal';
@@ -241,6 +243,8 @@ async function boot() {
 
     // Bridges first: the placement check below asks whether the spot is on a bridge.
     bridges.applyIsland(id);
+    // Props and plants on this island's bridge landings are hidden, with their colliders.
+    next.scatter.setHidden(bridges.corridorsOf(id));
     if (opts.shift) {
       player.shiftBy(opts.shift.dx, opts.shift.dz);
       rig.shift(opts.shift.dx, opts.shift.dz);

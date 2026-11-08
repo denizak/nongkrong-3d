@@ -62,9 +62,9 @@ export class Physics {
     return this.track(this.world.createCollider(this.RAPIER.ColliderDesc.trimesh(positions, indices)));
   }
 
-  /** Immovable collider at a local position (no rigid body needed). */
-  addStatic(desc: RAPIER.ColliderDesc, x: number, y: number, z: number) {
-    this.track(this.world.createCollider(desc.setTranslation(x, y, z)));
+  /** Immovable collider at a local position (no rigid body needed). Returns it, so the owner can switch it off. */
+  addStatic(desc: RAPIER.ColliderDesc, x: number, y: number, z: number): RAPIER.Collider {
+    return this.track(this.world.createCollider(desc.setTranslation(x, y, z)));
   }
 
   /** Immovable collider that also blocks the camera ray. */

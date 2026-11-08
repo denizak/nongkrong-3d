@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { mulberry32, type ShapeSpec, type Terrain } from './Terrain';
-import { instanceModel, type NatureAssets, type NatureName } from './Assets';
+import type { NatureAssets, NatureName } from './Assets';
+import type { Scatter } from './Scatter';
 
 const GRASS_ENABLED = false; // grass looked off; disabled for now
 const GRASS: NatureName[] = ['grass', 'grass_large', 'grass_leafs'];
@@ -9,12 +10,12 @@ const FLOWERS: NatureName[] = [
 ];
 const UP = new THREE.Vector3(0, 1, 0);
 
-/** Scatters swaying grass tufts and flowers on grassy land (no shadows). */
+/** Scatters swaying grass tufts and flowers on grassy land (no shadows). They go through `scatter`, so bridges can hide them. */
 export function addVegetation(
   scene: THREE.Object3D,
   terrain: Terrain,
   assets: NatureAssets,
-  inCorridor: (x: number, z: number) => boolean,
+  scatter: Scatter,
   spec: ShapeSpec,
 ) {
   const rand = mulberry32(911);
@@ -25,9 +26,8 @@ export function addVegetation(
   group.name = 'vegetation';
   scene.add(group);
 
-  // Grassy land: inland, above the beach, not in the pond, paddy or bridge landings.
+  // Grassy land: inland, above the beach, not in the pond or paddy.
   const grassy = (x: number, z: number) => {
-    if (inCorridor(x, z)) return false;
     if (Math.hypot(x, z) > 44 * K) return false;
     if (ponds.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + 2)) return false;
     if (spec.keepOut?.(x, z)) return false;
@@ -52,7 +52,6 @@ export function addVegetation(
     sizeOf: (name: NatureName) => [number, number],
     wind: number,
   ) => {
-    const byName = new Map<NatureName, THREE.Matrix4[]>(names.map((n) => [n, []]));
     const quat = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     const pos = new THREE.Vector3();
@@ -64,9 +63,9 @@ export function addVegetation(
       quat.setFromAxisAngle(UP, rand() * Math.PI * 2);
       pos.set(p.x, p.y, p.z);
       scale.set(w, h, w);
-      byName.get(name)!.push(new THREE.Matrix4().compose(pos, quat, scale));
+      scatter.add(name, new THREE.Matrix4().compose(pos, quat, scale), p.x, p.z);
     }
-    for (const [name, mats] of byName) instanceModel(group, assets[name], mats, { wind, jitter: rand });
+    scatter.flush(group, assets, () => ({ wind, jitter: rand }));
   };
 
   // Tufts are kept short so they read as grass, not crystal shards.
