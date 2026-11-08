@@ -12,42 +12,57 @@ export function mulberry32(seed: number) {
   };
 }
 
-const smoothstep = (e0: number, e1: number, x: number) => {
+export const smoothstep = (e0: number, e1: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
   return t * t * (3 - 2 * t);
 };
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Anything that can answer "how high is the ground here" in a local frame. */
 export interface Ground {
   heightAt(x: number, z: number): number;
 }
 
+/** A round basin that dips below the water plane. */
+export interface Pond {
+  x: number;
+  z: number;
+  r: number;
+  depth: number;
+}
+
+/** A grassy rise. */
+export interface Hill {
+  x: number;
+  z: number;
+  r: number;
+  h: number;
+}
+
+/** A tree cluster: its centre, radius and tree count. */
+export interface Orchard {
+  x: number;
+  z: number;
+  r: number;
+  trees: number;
+}
+
 /** Named areas of an island, in its local frame. */
 export interface Zones {
   spawn: { x: number; z: number; r: number; h: number };
-  pond: { x: number; z: number; r: number; depth: number };
+  /** Every pond on the island. Fishing in any of them counts as pond water. */
+  ponds: Pond[];
   paddy: { x: number; z: number; w: number; d: number; h: number };
-  hill: { x: number; z: number; r: number; h: number };
+  hills: Hill[];
 }
 
-/** The normal island's zones. The main island uses scaleZones(ZONES, MAIN_SCALE). */
+/** The normal island's zones. */
 export const ZONES: Zones = {
   spawn: { x: 0, z: 0, r: 9, h: 1.6 },
-  pond: { x: 10, z: 22, r: 9, depth: -1.4 },
+  ponds: [{ x: 10, z: 22, r: 9, depth: -1.4 }],
   paddy: { x: -24, z: -18, w: 22, d: 16, h: 1.1 },
-  hill: { x: 30, z: -26, r: 16, h: 5 },
+  hills: [{ x: 30, z: -26, r: 16, h: 5 }],
 };
-
-/** Positions and sizes scaled by k. Heights and depths stay the same. */
-export function scaleZones(z: Zones, k: number): Zones {
-  return {
-    spawn: { ...z.spawn, x: z.spawn.x * k, z: z.spawn.z * k, r: z.spawn.r * k },
-    pond: { ...z.pond, x: z.pond.x * k, z: z.pond.z * k, r: z.pond.r * k },
-    paddy: { ...z.paddy, x: z.paddy.x * k, z: z.paddy.z * k, w: z.paddy.w * k, d: z.paddy.d * k },
-    hill: { ...z.hill, x: z.hill.x * k, z: z.hill.z * k, r: z.hill.r * k },
-  };
-}
 
 export const WATER_LEVEL = 0;
 
@@ -60,13 +75,23 @@ export interface ShapeSpec {
   size: number;
   segments: number;
   zones: Zones;
-  /** Orchard centre and radius, for fruit trees and the torches around them. */
-  orchard: { x: number; z: number; r: number };
+  /** Orchard clusters, for fruit trees, torches and fireflies. */
+  orchards: Orchard[];
   /**
    * Reference coast radius (m) for the ambience and the sand bands: 62 m for a normal island, scaled with
    * the shape for the main island.
    */
   coastR: number;
+  /** Where a player arriving on this island is placed (local x, z) and which way they face (heading). */
+  start: { x: number; z: number; heading: number };
+  /** Rice stalk spacing (m) in the paddy. */
+  riceSpacing: number;
+  /** Extra scarecrows (no interaction) in the paddy, as local x, z. */
+  decoyScarecrows?: Array<[number, number]>;
+  /** Torch spots (local x, z). Without it the generic ring around the spawn, pond and orchard is used. */
+  torchSpots?: Array<[number, number]>;
+  /** True for a point that must stay free of props and vegetation (plaza, pier, ...). Set by the generator. */
+  keepOut?: (x: number, z: number) => boolean;
 }
 
 export const NORMAL_SPEC: ShapeSpec = {
@@ -75,16 +100,23 @@ export const NORMAL_SPEC: ShapeSpec = {
   size: 170,
   segments: 170,
   zones: ZONES,
-  orchard: { x: -14, z: 12, r: 6 },
+  orchards: [{ x: -14, z: 12, r: 6, trees: 8 }],
   coastR: 62,
+  start: { x: 0, z: 0, heading: 0 },
+  riceSpacing: 0.8,
 };
 
-const SAND = new THREE.Color('#ecd9a0');
-const WET_SAND = new THREE.Color('#c9b27a');
-const GRASS = new THREE.Color('#7ccb52');
-const GRASS_DARK = new THREE.Color('#58ab45');
-const PADDY = new THREE.Color('#8f9b4c');
-const MUD = new THREE.Color('#7d6a45');
+/** Colours shared by the generators. */
+export const COLORS = {
+  SAND: new THREE.Color('#ecd9a0'),
+  WET_SAND: new THREE.Color('#c9b27a'),
+  GRASS: new THREE.Color('#7ccb52'),
+  GRASS_DARK: new THREE.Color('#58ab45'),
+  PADDY: new THREE.Color('#8f9b4c'),
+  MUD: new THREE.Color('#7d6a45'),
+};
+const { SAND, WET_SAND, GRASS, GRASS_DARK, PADDY, MUD } = COLORS;
+
 
 /** Height of the sea floor away from any island (m). */
 export const DEEP = -3.5;
@@ -103,8 +135,8 @@ export class Terrain implements Ground {
   readonly zones: Zones;
   /** Reference coast radius (m), from the spec. See ShapeSpec.coastR. */
   readonly coastR: number;
-  private heights: Float32Array;
-  private noise = createNoise2D(mulberry32(7));
+  protected heights: Float32Array;
+  protected noise = createNoise2D(mulberry32(7));
 
   constructor(readonly spec: ShapeSpec) {
     this.size = spec.size;
@@ -164,7 +196,7 @@ export class Terrain implements Ground {
     this.coastR = spec.coastR;
   }
 
-  private fbm(x: number, z: number) {
+  protected fbm(x: number, z: number) {
     let amp = 1;
     let freq = 1 / 40;
     let sum = 0;
@@ -177,8 +209,8 @@ export class Terrain implements Ground {
   }
 
   /** Analytic height used to build the grid. */
-  private computeHeight(x: number, z: number) {
-    const { zones: { hill, spawn, paddy, pond }, spec } = this;
+  protected computeHeight(x: number, z: number) {
+    const { zones: { hills, spawn, paddy, ponds }, spec } = this;
     const K = spec.scale;
     // Island mask with a wobbly coastline. The mask radius grows with the scale; the wobble does not.
     const coast = this.noise(x / 30 + 100, z / 30) * 0.12;
@@ -187,9 +219,11 @@ export class Terrain implements Ground {
 
     let h = lerp(DEEP, 1.4, island) + this.fbm(x, z) * 0.9 * island;
 
-    // A grassy hill.
-    const hd = Math.hypot(x - hill.x, z - hill.z) / hill.r;
-    h += Math.exp(-hd * hd * 2) * hill.h * island;
+    // Grassy hills.
+    for (const hill of hills) {
+      const hd = Math.hypot(x - hill.x, z - hill.z) / hill.r;
+      h += Math.exp(-hd * hd * 2) * hill.h * island;
+    }
 
     // Flat spawn area.
     const sd = Math.hypot(x - spawn.x, z - spawn.z);
@@ -200,18 +234,20 @@ export class Terrain implements Ground {
     const pz = Math.max(0, Math.abs(z - paddy.z) - paddy.d / 2);
     h = lerp(h, paddy.h, smoothstep(5, 0, Math.hypot(px, pz)));
 
-    // Pond basin, dips below the water plane so the shared water fills it.
-    const pd = Math.hypot(x - pond.x, z - pond.z) + this.noise(x / 6, z / 6) * 1.2;
-    h = lerp(h, pond.depth, smoothstep(pond.r, pond.r * 0.35, pd));
+    // Pond basins, dip below the water plane so the shared water fills them.
+    for (const pond of ponds) {
+      const pd = Math.hypot(x - pond.x, z - pond.z) + this.noise(x / 6, z / 6) * 1.2;
+      h = lerp(h, pond.depth, smoothstep(pond.r, pond.r * 0.35, pd));
+    }
 
     return h;
   }
 
-  private colorAt(x: number, z: number, h: number, out: THREE.Color) {
-    const { paddy, pond } = this.zones;
+  protected colorAt(x: number, z: number, h: number, out: THREE.Color) {
+    const { paddy, ponds } = this.zones;
     const inPaddyRect =
       Math.abs(x - paddy.x) < paddy.w / 2 && Math.abs(z - paddy.z) < paddy.d / 2;
-    const nearPond = Math.hypot(x - pond.x, z - pond.z) < pond.r + 1.5;
+    const nearPond = ponds.some((pond) => Math.hypot(x - pond.x, z - pond.z) < pond.r + 1.5);
     // Sand only along the coastline, not in inland dips.
     const coastal = Math.hypot(x, z) > 44 * this.spec.scale && !nearPond;
 

@@ -9,6 +9,8 @@ import { NATURE_MODELS, loadNatureAssets } from './world/Assets';
 import { buildIslandContent, type IslandContent } from './world/IslandContent';
 import { Archipelago, IslandStates, type IslandState } from './world/Archipelago';
 import { Bridges } from './world/Bridges';
+import { pierLayout } from './world/Beach';
+import { IslandShapes } from './world/IslandShapes';
 import { Proxies } from './world/Proxies';
 import { MAIN_ID, ISLAND_COUNT, islandById, type IslandKind } from './world/Islands';
 import { IslandPill } from './ui/IslandPill';
@@ -33,6 +35,9 @@ import { LookControls } from './player/LookControls';
 import { Net } from './net/Net';
 import { RemotePlayers } from './net/RemotePlayers';
 import { NetPill } from './net/NetPill';
+import { Minimap } from './ui/Minimap';
+import { FullMap } from './ui/FullMap';
+import { IslandTitle } from './ui/IslandTitle';
 
 const NO_MOVE = { x: 0, y: 0 };
 /** Beach is the sand band: beyond this share of the coast radius (and low ground). */
@@ -102,6 +107,10 @@ async function boot() {
   // Terrains for both kinds, built once. The live ground follows the live island's terrain.
   // The game starts on the main island.
   const terrains = new Terrains();
+  // The main island's start: the plaza's south edge, facing north.
+  const start = terrains.main.spec.start;
+  // Island shapes for the minimap and the full map, baked in chunks in the background.
+  const shapes = new IslandShapes(terrains);
   const ground = new LiveGround(terrains.main);
   const env = new Environment(scene, terrains.heightAtWorld);
   const daynight = new DayNight(scene, env, ground, renderer);
@@ -121,6 +130,8 @@ async function boot() {
 
   loading.setProgress(0.78, t('loading.world'));
   const bridges = new Bridges(scene, terrains, physics);
+  // The main island's pier: a bridge-style deck from the south beach out to sea.
+  bridges.addLayout(pierLayout(terrains.main));
   const player = new Player(ground, physics, model, (x, z) => bridges.onBridge(x, z));
   scene.add(player.object);
 
@@ -155,9 +166,6 @@ async function boot() {
   // Robot looks: the loading card, K to reroll, and the touch dice button.
   const look = new LookControls({ model, input, inventory, loading });
 
-  // Touch joystick, camera drag and buttons. Does nothing on non-touch devices.
-  const touch = new TouchControls({ input, fishpedia, chat });
-
   // Multiplayer: presence and chat over WebRTC. Trystero loads when the game starts. ?solo turns it off.
   const net = new Net(() => look.current, { solo: params.has('solo') });
   const remotes = new RemotePlayers(scene, net);
@@ -177,6 +185,12 @@ async function boot() {
   });
   new IslandPill(archipelago);
   const netPill = new NetPill(net, archipelago);
+  const mapWorld = { arch: archipelago, net, bridges, player };
+  const minimap = new Minimap(mapWorld, shapes);
+  const fullMap = new FullMap(mapWorld, shapes, input);
+  const islandTitle = new IslandTitle();
+  // Touch joystick, camera drag and buttons, with the map button. Does nothing on non-touch devices.
+  const touch = new TouchControls({ input, fishpedia, chat, map: fullMap });
 
   /** The live island's content. Set by enterIsland; the main island until the first switch. */
   let live: IslandContent = contents.main;
@@ -218,7 +232,7 @@ async function boot() {
     interactions.setActive(next.interactables);
     birds.setIsland(next.zones);
     fishing.setZones(next.zones);
-    daynight.setIsland(next.zones, next.spec.orchard);
+    daynight.setIsland(next.zones, next.spec.orchards);
     sfx.coastR = next.coastR;
 
     const saved = islands.get(id);
@@ -260,11 +274,11 @@ async function boot() {
     enter: (id, x, z, heading) => enterIsland(id, { x, z, heading }),
     newGame: () => {
       islands.clear();
-      enterIsland(MAIN_ID, { capture: false });
+      enterIsland(MAIN_ID, { ...start, capture: false });
       rig.snapTo(player.position);
     },
   });
-  if (!save.restore()) enterIsland(MAIN_ID, { x: 0, z: 0, heading: 0 });
+  if (!save.restore()) enterIsland(MAIN_ID, start);
   booted = true;
   rig.snapTo(player.position);
   save.start();
@@ -275,7 +289,7 @@ async function boot() {
       game: {
         player, rig, camera, physics, interactions, inventory, pickups, prone: PRONE, sit: SIT,
         fishing, fishpedia, chat, birds, audio: sfx, save, loading, touch, daynight, weather,
-        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes,
+        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes, map: fullMap, minimap, shapes,
         renderer, debugDrawStats: () => drawStats(scene, renderer), islandCount: ISLAND_COUNT,
         contents, terrains, ground, env,
         /** The live island's content: trees, paddy, props, torches, terrain, scarecrow. */
@@ -330,7 +344,11 @@ async function boot() {
       player.sync();
       // Floating origin: crossing into another island's region moves the local frame onto that island.
       const shift = archipelago.shiftFor(player.position.x, player.position.z);
-      if (shift) enterIsland(shift.id, { shift: { dx: shift.dx, dz: shift.dz } });
+      if (shift) {
+        const first = !archipelago.visited.has(shift.id);
+        enterIsland(shift.id, { shift: { dx: shift.dx, dz: shift.dz } });
+        islandTitle.show(shift.id, first);
+      }
       fishing.tick(dt, move);
       interactions.update(dt);
       birds.update(dt, player.position);
@@ -352,6 +370,8 @@ async function boot() {
       remotes.update(dt, camera, { island: archipelago.id, pos: player.position });
     }
     netPill.update(dt);
+    minimap.update(dt);
+    fullMap.update();
     env.update(player.position, t);
     daynight.update(dt, player.position, weather.rainAmount);
     weather.update(dt, player.position, daynight.hoursThisFrame);
@@ -359,6 +379,7 @@ async function boot() {
     // Both kinds keep their torches ticking, so the proxies of the other kind stay in step.
     contents.normal.torches.update(dt, daynight.nightFactor);
     contents.main.torches.update(dt, daynight.nightFactor);
+    contents.main.campfire?.update(dt, daynight.nightFactor);
     bridges.update(daynight.nightFactor);
     proxies.sync();
 

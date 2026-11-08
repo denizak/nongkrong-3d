@@ -17,6 +17,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
   font-variant-numeric: tabular-nums; white-space: nowrap;
   background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
 }
+#island-pill .progress { font-size: 0.8em; font-weight: 600; color: #5a7a3a; }
 
 /* Interaction prompt, bottom centre. */
 #prompt {
@@ -29,12 +30,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
 }
 #prompt.show { opacity: 1; }
 
-/* Inventory bar, top centre. */
+/* Inventory bar, top centre: one row across the free band between the top-left column and the right edge.
+   Both sides reserve the same width (the --hud-col edge set by IslandPill), so the row stays centred. */
 #inventory {
-  position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; pointer-events: none;
-  /* Centred, but never under the top-left column (the --hud-col edge set by IslandPill). */
-  max-width: min(92vw, calc(100vw - 2 * var(--hud-col, 0px)));
+  position: fixed; top: 16px;
+  left: calc(var(--hud-col, 0px) + 12px); right: calc(var(--hud-col, 0px) + 12px);
+  display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; gap: 8px; pointer-events: none;
   opacity: 0; transition: opacity 0.3s ease;
 }
 #inventory.show { opacity: 1; }

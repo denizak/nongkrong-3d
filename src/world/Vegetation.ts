@@ -18,7 +18,7 @@ export function addVegetation(
   spec: ShapeSpec,
 ) {
   const rand = mulberry32(911);
-  const { pond, paddy } = spec.zones;
+  const { ponds, paddy } = spec.zones;
   const K = spec.scale;
   const density = K * K;
   const group = new THREE.Group();
@@ -29,7 +29,8 @@ export function addVegetation(
   const grassy = (x: number, z: number) => {
     if (inCorridor(x, z)) return false;
     if (Math.hypot(x, z) > 44 * K) return false;
-    if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 2) return false;
+    if (ponds.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + 2)) return false;
+    if (spec.keepOut?.(x, z)) return false;
     if (Math.abs(x - paddy.x) < paddy.w / 2 + 1 && Math.abs(z - paddy.z) < paddy.d / 2 + 1) return false;
     return terrain.heightAt(x, z) > 0.7;
   };

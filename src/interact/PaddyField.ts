@@ -60,8 +60,10 @@ export interface PaddyDeps {
   assets: NatureAssets;
   player: Player;
   inventory: Inventory;
-  /** Stalks are kept clear of this point (the scarecrow base). */
-  avoid: THREE.Vector3;
+  /** Stalks are kept clear of these points (the scarecrow bases). */
+  avoid: THREE.Vector3[];
+  /** Distance between stalks (m). */
+  spacing: number;
 }
 
 interface Puff {
@@ -113,11 +115,12 @@ export class PaddyField implements Interactable {
     const rand = mulberry32(99);
     const { x: px, z: pz, w, d } = deps.zones.paddy;
     const spots: { x: number; y: number; z: number; yaw: number }[] = [];
-    for (let x = px - w / 2 + 1; x <= px + w / 2 - 1; x += 0.8) {
-      for (let z = pz - d / 2 + 1; z <= pz + d / 2 - 1; z += 0.8) {
+    const step = deps.spacing;
+    for (let x = px - w / 2 + 1; x <= px + w / 2 - 1; x += step) {
+      for (let z = pz - d / 2 + 1; z <= pz + d / 2 - 1; z += step) {
         const jx = x + (rand() - 0.5) * 0.2;
         const jz = z + (rand() - 0.5) * 0.2;
-        if (Math.hypot(jx - deps.avoid.x, jz - deps.avoid.z) < 1.2) continue;
+        if (deps.avoid.some((a) => Math.hypot(jx - a.x, jz - a.z) < 1.2)) continue;
         spots.push({ x: jx, y: deps.terrain.heightAt(jx, jz), z: jz, yaw: rand() * TAU });
       }
     }

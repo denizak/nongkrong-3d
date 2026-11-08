@@ -1,11 +1,12 @@
 import * as THREE from 'three/webgpu';
 import { bakeStatic, type Baked } from './Bake';
 import { ISLANDS, centreOf, inProxyWindow, type IslandKind } from './Islands';
+import { CAMPFIRE_FLAME } from './Plaza';
 
 /** Objects whose visibility or transform must follow the live island in each proxy. */
 const SYNC_NAMES = new Set(['torch-group', 'torch-flame']);
 /** Paddy stalks and flowers are too heavy to copy for every proxy, so proxies drop them. */
-const STRIP_NAMES = new Set(['rice', 'vegetation']);
+const STRIP_NAMES = new Set(['rice', 'vegetation', CAMPFIRE_FLAME]);
 
 /** A kind's live content root, with the parts proxies handle one by one. */
 export interface LiveRoot {

@@ -3,11 +3,9 @@ import * as THREE from 'three/webgpu';
 import { PointsNodeMaterial } from 'three/webgpu';
 import { attribute, uniform } from 'three/tsl';
 import type { Environment } from './Environment';
-import { WATER_LEVEL, ZONES, type Ground, type Zones } from './Terrain';
+import { WATER_LEVEL, ZONES, type Ground, type Orchard, type Zones } from './Terrain';
 import './daynight.css';
 
-/** Orchard centre and radius, for the firefly cluster. */
-export type Orchard = { x: number; z: number; r: number };
 
 /** Real seconds for one full in-game day. */
 export const DAY_SECONDS = 1200;
@@ -359,7 +357,7 @@ export class DayNight {
   }
 
   /** Fireflies in three clusters: pond, orchard and the paddy edges. */
-  private buildFireflies(zones: Zones = ZONES, orchard: Orchard = { x: -14, z: 12, r: 7 }): THREE.Points {
+  private buildFireflies(zones: Zones = ZONES, orchards: Orchard[] = [{ x: -14, z: 12, r: 6, trees: 8 }]): THREE.Points {
     const flies: Firefly[] = [];
     for (let i = 0; i < FIREFLY_COUNT; i++) {
       flies.push({
@@ -371,7 +369,7 @@ export class DayNight {
       });
     }
     this.flies = flies;
-    this.scatterFireflies(zones, orchard);
+    this.scatterFireflies(zones, orchards);
     for (let i = 0; i < FIREFLY_COUNT; i++) FIREFLY_COLOR.toArray(this.flyBase, i * 3);
 
     const geo = new THREE.BufferGeometry();
@@ -392,13 +390,12 @@ export class DayNight {
   }
 
   /** The live island changed: scatter the firefly clusters around its pond, orchard and paddy. */
-  setIsland(zones: Zones, orchard: Orchard) {
-    this.scatterFireflies(zones, orchard);
+  setIsland(zones: Zones, orchards: Orchard[]) {
+    this.scatterFireflies(zones, orchards);
   }
 
-  private scatterFireflies(zones: Zones, orchard: Orchard) {
-    const { pond, paddy } = zones;
-    const ORCHARD = orchard;
+  private scatterFireflies(zones: Zones, orchards: Orchard[]) {
+    const { ponds, paddy } = zones;
     const flies = this.flies;
     for (let i = 0; i < FIREFLY_COUNT; i++) {
       const fly = flies[i];
@@ -406,16 +403,18 @@ export class DayNight {
       let cz: number;
       let reach: number;
       if (i < 25) {
+        const pond = ponds[i % ponds.length];
         const a = rand(0, Math.PI * 2);
         const r = Math.sqrt(Math.random()) * (pond.r - 1.5);
         cx = pond.x + Math.cos(a) * r;
         cz = pond.z + Math.sin(a) * r;
         reach = 1.6;
       } else if (i < 40) {
+        const orchard = orchards[i % orchards.length];
         const a = rand(0, Math.PI * 2);
-        const r = Math.sqrt(Math.random()) * (ORCHARD.r - 1);
-        cx = ORCHARD.x + Math.cos(a) * r;
-        cz = ORCHARD.z + Math.sin(a) * r;
+        const r = Math.sqrt(Math.random()) * (orchard.r - 1);
+        cx = orchard.x + Math.cos(a) * r;
+        cz = orchard.z + Math.sin(a) * r;
         reach = 1.4;
       } else {
         // Along the paddy edges, just outside the field.

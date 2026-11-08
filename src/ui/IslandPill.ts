@@ -1,14 +1,14 @@
 import { t } from '../i18n';
-import { MAIN_ID } from '../world/Islands';
+import { ISLAND_COUNT, displayName } from '../world/Islands';
 import type { Archipelago } from '../world/Archipelago';
 
 /**
- * "🏝️ Island 12 / 49 · 7 visited", or "🏝️ Main Island" on the main island. Sits in the top-left column, directly below the clock pill.
- * In touch mode the text is shorter and the inventory row is moved clear of the column.
+ * "🏝️ Pulau Pramuka · 7/50 visited", with the progress part smaller. Sits in the top-left column, directly below the clock pill.
+ * In touch mode the progress part is left out and the inventory row is moved clear of the column.
  */
 export class IslandPill {
   private el = document.createElement('div');
-  private text = '';
+  private key = '';
 
   constructor(private arch: Archipelago) {
     this.el.id = 'island-pill';
@@ -22,13 +22,20 @@ export class IslandPill {
   private update() {
     const visited = this.arch.visited.size;
     const touch = document.documentElement.classList.contains('touch');
-    const showVisited = !touch && visited > 0;
-    const text = this.arch.id === MAIN_ID
-      ? t('island.main')
-      : `${t('island.pill', { id: this.arch.id, total: this.arch.total })}${showVisited ? t('island.visited', { n: visited }) : ''}`;
-    if (text !== this.text) {
-      this.text = text;
-      this.el.textContent = text;
+    const id = this.arch.id;
+    const key = `${id}|${visited}|${touch}`;
+    if (key !== this.key) {
+      this.key = key;
+      const name = document.createElement('span');
+      name.textContent = t('island.pill', { name: displayName(id) });
+      const nodes: Node[] = [name];
+      if (!touch) {
+        const progress = document.createElement('span');
+        progress.className = 'progress';
+        progress.textContent = t('island.progress', { n: visited, total: ISLAND_COUNT });
+        nodes.push(progress);
+      }
+      this.el.replaceChildren(...nodes);
     }
     const clock = document.getElementById('clock-pill');
     if (clock) this.place(clock);

@@ -34,7 +34,7 @@ export class FishingSpot implements Interactable {
   private target = new THREE.Vector3();
   private water: WaterKind = 'sea';
   private available = false;
-  /** The live island's zones: its pond decides pond or sea. */
+  /** The live island's zones: its ponds decide pond or sea. */
   private zones: Zones = ZONES;
 
   constructor(private deps: FishingSpotDeps) {
@@ -104,7 +104,7 @@ export class FishingSpot implements Interactable {
     const deep = terrain.heightAt(x, z) < WATER_LEVEL - MIN_DEPTH;
     const onShore = terrain.heightAt(p.x, p.z) > WATER_LEVEL - MIN_DEPTH || (this.deps.onBridge?.(p.x, p.z) ?? false);
     this.available = deep && onShore;
-    const pond = this.zones.pond;
-    this.water = Math.hypot(x - pond.x, z - pond.z) <= pond.r + 2 ? 'pond' : 'sea';
+    const inPond = this.zones.ponds.some((pond) => Math.hypot(x - pond.x, z - pond.z) <= pond.r + 2);
+    this.water = inPond ? 'pond' : 'sea';
   }
 }

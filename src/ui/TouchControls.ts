@@ -3,6 +3,7 @@ import './touch.css';
 import type { Input } from '../core/Input';
 import type { Fishpedia } from './Fishpedia';
 import type { ChatBubble } from './ChatBubble';
+import type { FullMap } from './FullMap';
 
 /** Joystick radius in px; the knob never travels further than this. */
 const STICK_R = 55;
@@ -23,6 +24,7 @@ interface Deps {
   input: Input;
   fishpedia: Fishpedia;
   chat: ChatBubble;
+  map: FullMap;
 }
 
 interface Tracked {
@@ -40,6 +42,7 @@ export class TouchControls {
   private input: Input;
   private fishpedia: Fishpedia;
   private chat: ChatBubble;
+  private map: FullMap;
   private tracked = new Map<number, Tracked>();
   private stickId = -1;
   private stickX = 0;
@@ -52,6 +55,7 @@ export class TouchControls {
     this.input = deps.input;
     this.fishpedia = deps.fishpedia;
     this.chat = deps.chat;
+    this.map = deps.map;
     this.enabled = TouchControls.isTouchDevice();
     if (!this.enabled) return;
 
@@ -104,6 +108,7 @@ export class TouchControls {
       this.button('💬', t('touch.chat'), () => this.chat.openChat()),
       this.button('📖', t('touch.fish'), () => this.fishpedia.toggle()),
       this.button('🪑', t('touch.sit'), () => this.input.pressSit()),
+      this.button('🗺️', t('touch.map'), () => this.map.toggle()),
     );
     row2.append(
       this.button('😴', t('touch.lie'), () => this.input.pressLie()),

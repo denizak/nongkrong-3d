@@ -16,6 +16,8 @@ export interface Props {
   fruitTrees: FruitTree[];
   /** Scarecrow model at its spot in the paddy. Its interaction is wired in main. */
   scarecrow: THREE.Group;
+  /** Positions of the decoy scarecrows (no interaction), for the paddy's stalks to keep clear of. */
+  decoys: THREE.Vector3[];
 }
 
 const TAU = Math.PI * 2;
@@ -49,8 +51,8 @@ export function addProps(
 ): Props {
   const { ColliderDesc } = physics.RAPIER;
   const rand = mulberry32(42);
-  const { spawn, pond, paddy } = spec.zones;
-  const ORCHARD = spec.orchard;
+  const { spawn, ponds, paddy } = spec.zones;
+  const orchards = spec.orchards;
   // Linear scale K: distances grow with K, and scatter counts with K squared, so the density stays the same.
   const K = spec.scale;
   const density = K * K;
@@ -61,12 +63,13 @@ export function addProps(
 
   const range = (a: number, b: number) => a + rand() * (b - a);
   const pick = <T>(list: readonly T[]) => list[Math.floor(rand() * list.length)];
-  const inOrchard = (x: number, z: number) => Math.hypot(x - ORCHARD.x, z - ORCHARD.z) < ORCHARD.r + 3;
+  const inOrchard = (x: number, z: number) => orchards.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + 3);
 
   const keepClear = (x: number, z: number) => {
     if (inCorridor(x, z)) return true;
     if (Math.hypot(x - spawn.x, z - spawn.z) < spawn.r) return true;
-    if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 2) return true;
+    if (ponds.some((p) => Math.hypot(x - p.x, z - p.z) < p.r + 2)) return true;
+    if (spec.keepOut?.(x, z)) return true;
     if (Math.abs(x - paddy.x) < paddy.w / 2 + 2 && Math.abs(z - paddy.z) < paddy.d / 2 + 2) return true;
     return inOrchard(x, z);
   };
@@ -101,16 +104,16 @@ export function addProps(
     return Math.max(b.max.x - b.min.x, b.max.z - b.min.z) * height;
   };
 
-  // Orchard: 8 fruit trees in a ring around the orchard centre.
+  // Orchards: each cluster is a ring of mango trees around its centre.
   const fruitGeo = new THREE.SphereGeometry(0.14, 8, 6);
   const fruitMat = new THREE.MeshStandardMaterial({ color: '#ff9d2e', roughness: 0.5, flatShading: true });
   const fruitTrees: FruitTree[] = [];
-  const trees = Math.round(8 * K);
-  for (let i = 0; i < trees; i++) {
-    const a = (i / trees) * TAU + range(-0.2, 0.2);
-    const r = ORCHARD.r * range(0.6, 1);
-    const x = ORCHARD.x + Math.cos(a) * r;
-    const z = ORCHARD.z + Math.sin(a) * r;
+  for (const orchard of orchards)
+  for (let i = 0; i < orchard.trees; i++) {
+    const a = (i / orchard.trees) * TAU + range(-0.2, 0.2);
+    const r = orchard.r * range(0.6, 1);
+    const x = orchard.x + Math.cos(a) * r;
+    const z = orchard.z + Math.sin(a) * r;
     const y = terrain.heightAt(x, z);
     const h = range(4, 5);
     const name = pick(FRUIT_TREES);
@@ -198,7 +201,8 @@ export function addProps(
     if (p) add('mushroom_red', p.x, p.y, p.z, range(0.2, 0.35));
   }
 
-  // Bamboo clump on the pond's west shore, about 2 m from the water edge.
+  // Bamboo clump on the first pond's west shore, about 2 m from the water edge.
+  const pond = ponds[0];
   const bx = pond.x - 12.5 * K;
   const bz = pond.z;
   for (let i = 0; i < 10; i++) {
@@ -211,11 +215,13 @@ export function addProps(
   // One camera-blocking cylinder around the whole clump: spread 1.2 m plus 0.3 m, stalks up to 4 m.
   physics.addCameraBlocker(ColliderDesc.cylinder(2, 1.5), bx, terrain.heightAt(bx, bz) + 2, bz);
 
-  // Lily pads floating on the pond.
-  for (let i = 0; i < count(16); i++) {
-    const p = findSpot(pond.r - 1.5, (x, z) => Math.hypot(x - pond.x, z - pond.z) < pond.r - 1.5 && terrain.heightAt(x, z) < -0.2);
-    if (!p) continue;
-    add(pick(['lily_large', 'lily_small'] as const), p.x, 0.03, p.z, range(0.7, 1.3));
+  // Lily pads floating on each pond.
+  for (const water of ponds) {
+    for (let i = 0; i < count(16); i++) {
+      const p = findSpot(water.r - 1.5, (x, z) => Math.hypot(x - water.x, z - water.z) < water.r - 1.5 && terrain.heightAt(x, z) < -0.2);
+      if (!p) continue;
+      add(pick(['lily_large', 'lily_small'] as const), p.x, 0.03, p.z, range(0.7, 1.3));
+    }
   }
 
   for (const [name, mats] of batches) {
@@ -233,5 +239,14 @@ export function addProps(
   scarecrow.position.set(scarecrowX, terrain.heightAt(scarecrowX, scarecrowZ), scarecrowZ);
   group.add(scarecrow);
   physics.addStatic(ColliderDesc.cylinder(1.2, 0.1), scarecrowX, scarecrow.position.y + 1.2, scarecrowZ);
-  return { fruitTrees, scarecrow };
+  // Decoy scarecrows (no interaction) with the same post collider.
+  const decoys: THREE.Vector3[] = [];
+  for (const [dx, dz] of spec.decoyScarecrows ?? []) {
+    const decoy = buildScarecrow();
+    decoy.position.set(dx, terrain.heightAt(dx, dz), dz);
+    group.add(decoy);
+    decoys.push(decoy.position);
+    physics.addStatic(ColliderDesc.cylinder(1.2, 0.1), dx, decoy.position.y + 1.2, dz);
+  }
+  return { fruitTrees, scarecrow, decoys };
 }

@@ -1,5 +1,3 @@
-import { t } from '../i18n';
-
 /**
  * The island registry: the grid, every island's centre and region, which island a world point is on,
  * and which islands touch. Normal islands sit one per cell; the main island is a 2x2 block of cells.
@@ -51,8 +49,8 @@ export interface IslandDef {
   readonly centerWorld: Vec2;
   /** Half the width of the region, in metres. */
   readonly half: number;
-  /** Localised name. Read on each access, so a language switch takes effect. */
-  readonly label: string;
+  /** Proper name of the island (a real small Indonesian island). Not translated. */
+  readonly name: string;
   /** Grid cells this island occupies. */
   readonly cells: readonly Cell[];
 }
@@ -70,32 +68,40 @@ const cellCentre = (c: Cell): Vec2 => ({ x: c.col * SPACING, z: c.row * SPACING 
 const mainCells: Cell[] = [];
 for (let r = 0; r < MAIN_SPAN; r++) for (let c = 0; c < MAIN_SPAN; c++) mainCells.push({ col: MAIN_COL + c, row: MAIN_ROW + r });
 
-function makeDef(id: number, kind: IslandKind, centre: Vec2, half: number, cells: Cell[], label: () => string): IslandDef {
-  return {
-    id,
-    kind,
-    centerWorld: centre,
-    half,
-    cells,
-    get label() {
-      return label();
-    },
-  };
+/** Names of the normal islands, in id order (id 1 first, row by row). */
+const NORMAL_NAMES: readonly string[] = [
+  'Pramuka', 'Tidung', 'Pari', 'Untung Jawa', 'Bidadari', 'Onrust', 'Kelor', 'Pulau Sepa', 'Pulau Macan', 'Karimunjawa',
+  'Gili Trawangan', 'Gili Meno', 'Gili Air', 'Gili Nanggu', 'Gili Kedis', 'Gili Labak', 'Nusa Lembongan', 'Nusa Ceningan',
+  'Menjangan', 'Derawan', 'Maratua', 'Kakaban', 'Sangalaki', 'Rubiah', 'Pulau Weh', 'Bunaken', 'Siladen', 'Lihaga',
+  'Togean', 'Hoga', 'Tomia', 'Kaledupa', 'Banda Neira', 'Pulau Run', 'Pulau Ai', 'Pulau Hatta', 'Padar', 'Kanawa',
+  'Seraya', 'Rinca', 'Arborek', 'Kri', 'Mansuar', 'Wayag', 'Lengkuas', 'Kepayang', 'Pahawang', 'Penyengat', 'Sempu',
+];
+const MAIN_NAME = 'Pulau Nongkrong';
+
+function makeDef(id: number, kind: IslandKind, centre: Vec2, half: number, cells: Cell[], name: string): IslandDef {
+  return { id, kind, centerWorld: centre, half, cells, name };
 }
 
 /** Every island, index = id. The main island is id 0; normals are numbered 1..49 row by row. */
 export const ISLANDS: readonly IslandDef[] = (() => {
-  const list: IslandDef[] = [makeDef(MAIN_ID, 'main', MAIN_CENTRE, MAIN_HALF, mainCells, () => t('island.main'))];
+  const list: IslandDef[] = [makeDef(MAIN_ID, 'main', MAIN_CENTRE, MAIN_HALF, mainCells, MAIN_NAME)];
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = { col, row };
       if (isMainCell(cell) || isEmptyCell(cell)) continue;
       const id = list.length;
-      list.push(makeDef(id, 'normal', cellCentre(cell), NORMAL_HALF, [cell], () => t('island.name', { id })));
+      list.push(makeDef(id, 'normal', cellCentre(cell), NORMAL_HALF, [cell], NORMAL_NAMES[id - 1]));
     }
   }
+  if (list.length !== ISLAND_COUNT) throw new Error(`Expected ${ISLAND_COUNT} islands, built ${list.length}`);
   return list;
 })();
+
+/** Shown name: names already starting with Pulau, Gili or Nusa are used as they are, others get "Pulau ". */
+export function displayName(id: number): string {
+  const name = ISLANDS[id].name;
+  return /^(Pulau|Gili|Nusa)\b/.test(name) ? name : `Pulau ${name}`;
+}
 
 const byCell = new Map<string, number>();
 for (const def of ISLANDS) for (const c of def.cells) byCell.set(`${c.col},${c.row}`, def.id);

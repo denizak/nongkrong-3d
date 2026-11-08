@@ -170,10 +170,21 @@ export class Torches {
     }
   }
 
-  /** Finds the spots: spawn ring, paddy gap, pond shore, orchard edge, scarecrow. Nudges each toward spawn until valid. */
+  /** Finds the spots (spec.torchSpots, or the generic ring, shore, orchard and scarecrow set), then nudges each toward spawn until valid. */
   private spots(terrain: Terrain, physics: Physics, props: Props, spec: ShapeSpec): Array<[number, number]> {
-    const { spawn, pond, paddy } = spec.zones;
-    const ORCHARD = spec.orchard;
+    const raw = spec.torchSpots ?? this.genericSpots(spec, props);
+    const out: Array<[number, number]> = [];
+    for (const [x0, z0] of raw) {
+      const spot = this.settle(x0, z0, terrain, physics, props);
+      if (spot) out.push(spot);
+      else console.warn(`Torches: no valid spot near (${x0.toFixed(1)}, ${z0.toFixed(1)})`);
+    }
+    return out;
+  }
+
+  private genericSpots(spec: ShapeSpec, props: Props): Array<[number, number]> {
+    const { spawn, ponds, paddy } = spec.zones;
+    const orchard = spec.orchards[0];
     const K = spec.scale;
     const raw: Array<[number, number]> = [];
 
@@ -185,29 +196,23 @@ export class Torches {
     // 2 flanking the paddy's dike gap on the east side (gap is centred on paddy.z, 2 m wide).
     const eastX = paddy.x + paddy.w / 2 + 0.7;
     raw.push([eastX, paddy.z - 1.6], [eastX, paddy.z + 1.6]);
-    // 3 along the pond shore on the spawn-facing side, about 2 m back from the water.
+    // 3 along the first pond's shore on the spawn-facing side, about 2 m back from the water.
+    const pond = ponds[0];
     const pondAngle = Math.atan2(spawn.z - pond.z, spawn.x - pond.x);
     for (const d of [-0.3, 0, 0.3]) {
       const a = pondAngle + d;
       raw.push([pond.x + Math.cos(a) * (pond.r + 2), pond.z + Math.sin(a) * (pond.r + 2)]);
     }
     // 2 at the orchard edge facing spawn.
-    const orchardAngle = Math.atan2(spawn.z - ORCHARD.z, spawn.x - ORCHARD.x);
+    const orchardAngle = Math.atan2(spawn.z - orchard.z, spawn.x - orchard.x);
     for (const d of [-0.3, 0.3]) {
       const a = orchardAngle + d;
-      raw.push([ORCHARD.x + Math.cos(a) * ORCHARD.r * 1.33, ORCHARD.z + Math.sin(a) * ORCHARD.r * 1.33]);
+      raw.push([orchard.x + Math.cos(a) * orchard.r * 1.33, orchard.z + Math.sin(a) * orchard.r * 1.33]);
     }
     // 1 near the scarecrow.
     const sc = props.scarecrow.position;
     raw.push([sc.x + 1.5, sc.z - 1.5]);
-
-    const out: Array<[number, number]> = [];
-    for (const [x0, z0] of raw) {
-      const spot = this.settle(x0, z0, terrain, physics, props);
-      if (spot) out.push(spot);
-      else console.warn(`Torches: no valid spot near (${x0.toFixed(1)}, ${z0.toFixed(1)})`);
-    }
-    return out;
+    return raw;
   }
 
   /** Walks a spot toward spawn (the origin) until it is on dry land and clear of props. */

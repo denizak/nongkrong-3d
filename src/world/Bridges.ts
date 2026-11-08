@@ -55,6 +55,8 @@ export interface Layout {
   p1: number;
   h0: number;
   h1: number;
+  /** Mid-span arch (m). Defaults to ARCH; a pier lies flat with 0. */
+  arch?: number;
 }
 
 interface Rect {
@@ -155,6 +157,16 @@ export class Bridges {
   /** Number of bridges in the world. */
   get count(): number {
     return this.layouts.length;
+  }
+
+  /** Adds a walkable deck (a pier) after construction. Call before applyIsland. */
+  addLayout(l: Layout) {
+    this.layouts.push(l);
+    const g = new THREE.Group();
+    g.name = `bridge ${l.id}`;
+    this.root.add(g);
+    this.groups.push(g);
+    this.buildDeck(g, l, this.layouts.length);
   }
 
   /** The keep-clear test for props and vegetation on a kind of island, in that island's local frame. */
@@ -267,8 +279,9 @@ export class Bridges {
     const sgn = Math.sign(l.p1 - l.p0);
     const t = s / L;
     const a = l.p0 + sgn * s;
-    const h = THREE.MathUtils.lerp(l.h0, l.h1, t) + ARCH * Math.sin(Math.PI * t);
-    const dhds = (l.h1 - l.h0) / L + (ARCH * Math.PI * Math.cos(Math.PI * t)) / L;
+    const arch = l.arch ?? ARCH;
+    const h = THREE.MathUtils.lerp(l.h0, l.h1, t) + arch * Math.sin(Math.PI * t);
+    const dhds = (l.h1 - l.h0) / L + (arch * Math.PI * Math.cos(Math.PI * t)) / L;
     const isX = l.axis === 'x';
     const u = isX ? new THREE.Vector3(sgn, 0, 0) : new THREE.Vector3(0, 0, sgn);
     const v = isX ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(1, 0, 0);

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { CharacterModel, type Pose } from '../player/CharacterModel';
 import { encodeLook, type Look } from '../player/Look';
-import { centreOf, inProxyWindow } from '../world/Islands';
+import { centreOf, displayName, inProxyWindow } from '../world/Islands';
 import { SpeechBubble, placeOn } from '../ui/SpeechBubble';
 import { STALE_MS, type Net, type RemotePeer, type Snapshot } from './Net';
 import './net.css';
@@ -159,7 +159,7 @@ export class RemotePlayers {
     for (const c of cands.slice(0, MAX_RENDER)) {
       const av = this.ensure(c.peer);
       shown.add(c.peer.id);
-      this.place(av, c.s, c.x, c.z, dt, camera);
+      this.place(av, c.s, c.x, c.z, dt, camera, me.island);
     }
     // Everything else is out of range: hide it, keep the model so it can come back quickly.
     for (const [id, av] of this.avatars) {
@@ -170,7 +170,7 @@ export class RemotePlayers {
     }
   }
 
-  private place(av: Avatar, s: Sample, x: number, z: number, dt: number, camera: THREE.Camera) {
+  private place(av: Avatar, s: Sample, x: number, z: number, dt: number, camera: THREE.Camera, here: number) {
     av.anchor.visible = true;
     av.anchor.position.set(x, s.y, z);
     av.anchor.rotation.y = s.heading;
@@ -190,7 +190,9 @@ export class RemotePlayers {
       av.placeholder.body.position.y = 0.95 + Math.abs(Math.sin(performance.now() * 0.01 * s.speed)) * 0.08 * Math.min(1, s.speed / 4);
     }
 
-    const label = `${s.fishing ? '🎣 ' : ''}${av.peer.name}`;
+    // Away from my island, the tag also says which island the peer is on.
+    const away = s.island !== here ? ` · ${displayName(s.island)}` : '';
+    const label = `${s.fishing ? '🎣 ' : ''}${av.peer.name}${away}`;
     if (label !== av.nameShown) {
       av.nameShown = label;
       av.nameTag.textContent = label;
