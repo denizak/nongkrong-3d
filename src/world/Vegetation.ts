@@ -10,14 +10,21 @@ const FLOWERS: NatureName[] = [
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Scatters swaying grass tufts and flowers on grassy land (no shadows). */
-export function addVegetation(scene: THREE.Scene, terrain: Terrain, assets: NatureAssets) {
+export function addVegetation(
+  scene: THREE.Object3D,
+  terrain: Terrain,
+  assets: NatureAssets,
+  inCorridor: (x: number, z: number) => boolean,
+) {
   const rand = mulberry32(911);
   const { pond, paddy } = ZONES;
   const group = new THREE.Group();
+  group.name = 'vegetation';
   scene.add(group);
 
-  // Grassy land: inland, above the beach, not in the pond or paddy.
+  // Grassy land: inland, above the beach, not in the pond, paddy or bridge landings.
   const grassy = (x: number, z: number) => {
+    if (inCorridor(x, z)) return false;
     if (Math.hypot(x, z) > 44) return false;
     if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 2) return false;
     if (Math.abs(x - paddy.x) < paddy.w / 2 + 1 && Math.abs(z - paddy.z) < paddy.d / 2 + 1) return false;

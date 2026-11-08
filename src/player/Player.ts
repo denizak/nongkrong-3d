@@ -9,7 +9,6 @@ const RUN_SPEED = 7.5;
 const GRAVITY = 9.81;
 /** The player can wade into shallow water but not deeper than this. */
 const MIN_GROUND = -0.45;
-export const WORLD_LIMIT = 75;
 /** Capsule: 0.5 half-height of the cylinder part plus a 0.35 radius, so 1.7 m tall. */
 const CAPSULE_HALF = 0.5;
 const CAPSULE_RADIUS = 0.35;
@@ -44,6 +43,8 @@ export class Player {
     private terrain: Terrain,
     physics: Physics,
     private model: CharacterModel | null,
+    /** True on the live island's bridges (local coordinates). */
+    private onBridge: (x: number, z: number) => boolean = () => false,
   ) {
     if (model) {
       this.body.add(model.root);
@@ -145,7 +146,11 @@ export class Player {
     this.rigid.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z });
 
     this.object.rotation.y = this.heading;
-    this.model?.update(dt, this.speed, this.terrain.heightAt(this.position.x, this.position.z));
+    // On a bridge the ground is the deck, not the water below it, so use the body's own height.
+    const groundY = this.onBridge(this.position.x, this.position.z)
+      ? this.position.y
+      : this.terrain.heightAt(this.position.x, this.position.z);
+    this.model?.update(dt, this.speed, groundY);
 
     // Pose blend for the placeholder body; the glTF model handles its own pose.
     this.sitAmt = THREE.MathUtils.damp(this.sitAmt, this._pose === 'sit' ? 1 : 0, 8, dt);
@@ -168,7 +173,9 @@ export class Player {
 
   /** Teleports the character to (x, z) on the ground, facing heading. Used when restoring a save. */
   place(x: number, z: number, heading: number) {
-    const y = this.terrain.heightAt(x, z);
+    // On a bridge, start a little above the water and let gravity settle the body onto the deck.
+    const ground = this.terrain.heightAt(x, z);
+    const y = this.onBridge(x, z) ? Math.max(0, ground) + 2 : ground;
     this.heading = heading;
     this.object.rotation.y = heading;
     this.position.set(x, y, z);
@@ -184,6 +191,14 @@ export class Player {
     if (p === this._pose) return;
     this._pose = p;
     this.model?.setPose(p);
+  }
+
+  /** Moves the body by an island shift, keeping its pose and heading. */
+  shiftBy(dx: number, dz: number) {
+    const t = this.rigid.translation();
+    this.rigid.setTranslation({ x: t.x + dx, y: t.y, z: t.z + dz }, true);
+    this.position.x += dx;
+    this.position.z += dz;
   }
 
   /** Sit or lie down, or stand up if already in that pose. */
@@ -202,7 +217,12 @@ export class Player {
     this.position.set(t.x, t.y - FOOT_OFFSET, t.z);
   }
 
+  /** True if a spot (local coordinates) is land, shallow water or a bridge. */
+  isWalkable(x: number, z: number): boolean {
+    return !this.blocked(x, z);
+  }
+
   private blocked(x: number, z: number) {
-    return Math.hypot(x, z) > WORLD_LIMIT || this.terrain.heightAt(x, z) < MIN_GROUND;
+    return this.terrain.heightAt(x, z) < MIN_GROUND && !this.onBridge(x, z);
   }
 }

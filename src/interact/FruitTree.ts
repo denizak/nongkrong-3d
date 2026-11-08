@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import type { FruitTree as FruitTreeSite } from '../world/Props';
 import type { Interactable, InteractContext } from './Interactable';
 import type { Pickups } from './Pickups';
+import type { TreeState } from '../world/Archipelago';
 import { sfx } from '../audio/AudioManager';
 
 const SHAKE_TIME = 0.8;
@@ -35,6 +36,20 @@ export class FruitTree implements Interactable {
       this.rest.push(m);
       this.hanging.push(true);
     }
+  }
+
+  /** Which mangoes hang and the regrow timer, for saving this island. */
+  getState(): TreeState {
+    return { h: this.hanging.map((on) => (on ? 1 : 0)), r: Math.round(this.regrow * 100) / 100 };
+  }
+
+  /** Restores the fruit and regrow timer. Without an argument, the full tree comes back. */
+  setState(st?: TreeState) {
+    this.shakeT = -1;
+    this.pendingDrops = 0;
+    this.object.rotation.set(0, this.object.rotation.y, 0);
+    this.regrow = st?.r ?? 0;
+    this.hanging.forEach((_on, i) => this.setHanging(i, st ? st.h[i] === 1 : true));
   }
 
   prompt(): string | null {

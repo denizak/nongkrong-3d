@@ -52,7 +52,9 @@ export class InteractionSystem {
     if (pressed && best) best.interact(this.ctx);
 
     if (best) {
-      this.promptEl.textContent = `E — ${bestText}`;
+      // Touch players have no E key; the Action button uses the hand icon.
+      const key = document.documentElement.classList.contains('touch') ? '✋' : 'E —';
+      this.promptEl.textContent = `${key} ${bestText}`;
       this.promptEl.classList.add('show');
     } else {
       this.promptEl.classList.remove('show');

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>Nongkrong 3D</title>
     <link rel="stylesheet" href="/src/style.css" />
     <style>
@@ -29,6 +29,11 @@
       }
       #loading button:hover, #loading button:focus-visible { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 0 3px #5a7a3a, 0 10px 28px rgba(0, 0, 0, 0.2); outline: none; }
       #loading button:disabled { opacity: 0.6; }
+      /* Character card above the start button: swatch, name, shuffle. */
+      #loading .look { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 0 0 24px; }
+      #loading .swatch { width: 84px; height: 84px; border-radius: 50%; box-shadow: 0 6px 16px rgba(20, 60, 60, 0.25), inset 0 0 0 3px rgba(255, 255, 255, 0.55); }
+      #loading .look-name { font-size: 18px; font-weight: 700; color: #fffdf4; text-shadow: 0 2px 8px rgba(20, 80, 80, 0.35); }
+      #loading .look button.shuffle { font-size: 15px; font-weight: 700; padding: 8px 20px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
       #loading [hidden] { display: none !important; }
     </style>
   </head>

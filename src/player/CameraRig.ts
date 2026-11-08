@@ -25,6 +25,14 @@ export class CameraRig {
     return { forward, right };
   }
 
+  /** Moves the focus and camera by the same offset, so an island shift does not pop the view. */
+  shift(dx: number, dz: number) {
+    this.focus.x += dx;
+    this.focus.z += dz;
+    this.camera.position.x += dx;
+    this.camera.position.z += dz;
+  }
+
   snapTo(target: THREE.Vector3) {
     this.focus.copy(target);
     this.arm = this.distance;

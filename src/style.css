@@ -9,6 +9,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
 #hud .title { font-weight: 700; font-size: 15px; }
 #hud #backend { color: #5a7a3a; }
 
+/* Island counter pill, in the top-left column under the clock pill (positioned from JS). */
+#island-pill {
+  position: fixed; top: 60px; left: 16px; z-index: 30;
+  padding: 6px 14px; border-radius: 999px; pointer-events: none; user-select: none;
+  font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
 /* Interaction prompt, bottom centre. */
 #prompt {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
@@ -23,7 +32,9 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #9fdcf5; }
 /* Inventory bar, top centre. */
 #inventory {
   position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 92vw; pointer-events: none;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; pointer-events: none;
+  /* Centred, but never under the top-left column (the --hud-col edge set by IslandPill). */
+  max-width: min(92vw, calc(100vw - 2 * var(--hud-col, 0px)));
   opacity: 0; transition: opacity 0.3s ease;
 }
 #inventory.show { opacity: 1; }

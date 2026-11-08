@@ -4,6 +4,7 @@ import type { NatureAssets } from '../world/Assets';
 import type { Player } from '../player/Player';
 import type { Inventory } from '../ui/Inventory';
 import type { Interactable } from './Interactable';
+import type { PaddyState } from '../world/Archipelago';
 import { sfx } from '../audio/AudioManager';
 
 const PADDY = ZONES.paddy;
@@ -52,7 +53,8 @@ export function inPaddy(x: number, z: number) {
 }
 
 export interface PaddyDeps {
-  scene: THREE.Scene;
+  /** Where the paddy's visuals go (the island root, so proxies can clone them). */
+  scene: THREE.Object3D;
   terrain: Terrain;
   assets: NatureAssets;
   player: Player;
@@ -99,8 +101,11 @@ export class PaddyField implements Interactable {
   private puffs: Puff[] = [];
   private matrixDirty = false;
   private colorDirty = false;
+  /** Freshly built state, restored for islands the player has not changed. */
+  private fresh!: PaddyState;
 
   constructor(private deps: PaddyDeps) {
+    this.group.name = 'paddy';
     deps.scene.add(this.group);
     this.buildWater();
 
@@ -143,6 +148,7 @@ export class PaddyField implements Interactable {
     for (const part of deps.assets.crops_wheatStageB.parts) {
       const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9, metalness: 0, flatShading: true });
       const mesh = new THREE.InstancedMesh(part.geometry, mat, n);
+      mesh.name = 'rice';
       mesh.frustumCulled = false;
       this.group.add(mesh);
       this.meshes.push(mesh);
@@ -152,6 +158,44 @@ export class PaddyField implements Interactable {
       this.paint(i);
     }
     this.flush();
+    this.fresh = this.getState();
+  }
+
+  /** Stalk states and timers, for saving this island's progress. */
+  getState(): PaddyState {
+    return {
+      s: Array.from(this.state),
+      t: Array.from(this.timer, (v) => Math.round(v * 100) / 100),
+      f: Array.from(this.hf, (v) => Math.round(v * 1000) / 1000),
+    };
+  }
+
+  /** Restores stalk states and timers. Without an argument, the fresh layout comes back. */
+  setState(st?: PaddyState) {
+    const s = st ?? this.fresh;
+    if (s.s.length !== this.n) return;
+    this.state.set(s.s);
+    this.timer.set(s.t);
+    this.hf.set(s.f);
+    this.tilt.fill(0);
+    this.vel.fill(0);
+    this.dirX.fill(1);
+    this.dirZ.fill(0);
+    this.target = -1;
+    for (let i = 0; i < this.n; i++) {
+      this.write(i);
+      this.paint(i);
+    }
+    this.flush();
+  }
+
+  /** Drops the flying puffs, e.g. after the island changes. */
+  clearTransients() {
+    for (const pf of this.puffs) {
+      this.group.remove(pf.mesh);
+      pf.mat.dispose();
+    }
+    this.puffs = [];
   }
 
   prompt(): string | null {

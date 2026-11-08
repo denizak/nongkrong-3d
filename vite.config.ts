@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite';
 
+// GitHub Pages serves the game from /nongkrong-3d/. Dev and plain builds stay at '/'.
+const githubPages = process.env.GITHUB_PAGES === 'true';
+
 export default defineConfig({
+  base: githubPages ? '/nongkrong-3d/' : '/',
   build: {
     target: 'esnext',
     rolldownOptions: {

@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import { applyLook, bobAntenna, loadLook, type Look } from './Look';
 
-const MODEL_URL = '/models/character.glb';
+const MODEL_URL = `${import.meta.env.BASE_URL}models/character.glb`;
 const TARGET_HEIGHT = 1.8;
 const FADE = 0.25;
 const POSE_FADE = 0.3;
@@ -179,26 +180,35 @@ export class CharacterModel {
   private freeBones: THREE.Object3D[] = [];
   private poseDirty = false;
   private time = 0;
+  private scene: THREE.Object3D;
+  /** The look currently applied to this model. */
+  private _look: Look;
+  /** Bind pose of every bone, so setLook can re-measure from rest. */
+  private bindPose: { bone: THREE.Object3D; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }[] = [];
+  private lookTime = 0;
 
   private constructor(gltf: GLTF) {
+    this.scene = gltf.scene;
     this.root.add(this.tip);
     this.tip.add(gltf.scene);
     gltf.scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) o.castShadow = true;
     });
 
-    // Scale to the target height and stand the feet on y = 0.
+    // Scale to the target height, then apply the saved look. applyLook stands the feet on y = 0,
+    // since its whole-model scale can change the height.
     const size = new THREE.Box3().setFromObject(gltf.scene);
     gltf.scene.scale.setScalar(TARGET_HEIGHT / Math.max(1e-3, size.max.y - size.min.y));
-    const scaled = new THREE.Box3().setFromObject(gltf.scene);
-    gltf.scene.position.y -= scaled.min.y;
-
-    // The tip is identity here, so this box is in pivot space.
-    this.bounds.setFromObject(gltf.scene);
+    gltf.scene.traverse((o) => {
+      if ((o as THREE.Bone).isBone) {
+        this.bindPose.push({ bone: o, position: o.position.clone(), quaternion: o.quaternion.clone(), scale: o.scale.clone() });
+      }
+    });
+    this._look = loadLook();
+    applyLook(gltf.scene, this._look);
 
     // Measure the bind pose before any animation touches the bones.
-    this.prone = this.findProneRig(gltf.scene);
-    this.sit = this.findSitRig(gltf.scene);
+    this.measure();
 
     this.mixer = new THREE.AnimationMixer(gltf.scene);
     // Pick each state's clip by name, independent of the order in the file.
@@ -225,6 +235,47 @@ export class CharacterModel {
 
     this.current = this.actions.idle ?? null;
     this.current?.play();
+  }
+
+  /** Measures the bind pose: pivot-space bounds, and the prone and sit bones and lengths. Tip must be identity. */
+  private measure() {
+    this.bounds.setFromObject(this.scene);
+    this.prone = this.findProneRig(this.scene);
+    this.sit = this.findSitRig(this.scene);
+  }
+
+  /** The look currently worn by this model. */
+  get look(): Look {
+    return this._look;
+  }
+
+  /**
+   * Changes the look: re-applies it and re-measures the bind pose, so sit and prone stay correct
+   * at the new scale. Safe at any time; the next frame blends the poses back in.
+   */
+  setLook(look: Look) {
+    this._look = look;
+    // Measure from rest: undo the tip (prone tip and lift) and the bone poses from the last frame.
+    const tipRot = this.tip.rotation.x;
+    const tipY = this.tip.position.y;
+    this.tip.rotation.x = 0;
+    this.tip.position.y = 0;
+    for (const p of this.bindPose) {
+      p.bone.position.copy(p.position);
+      p.bone.quaternion.copy(p.quaternion);
+      p.bone.scale.copy(p.scale);
+    }
+    applyLook(this.scene, look);
+    this.scene.updateWorldMatrix(true, true);
+    this.measure();
+    this.tip.rotation.x = tipRot;
+    this.tip.position.y = tipY;
+  }
+
+  /** Per-frame look effects, such as the antenna bob. Called from update(). */
+  private updateLook(dt: number) {
+    this.lookTime += dt;
+    bobAntenna(this.scene, this.lookTime);
   }
 
   /** Finds the bones used by the prone pose; null if the model lacks any of them. */
@@ -319,7 +370,7 @@ export class CharacterModel {
   }
 
   /**
-   * Loads the model if /models/character.glb exists. Vite's dev server answers
+   * Loads the model if models/character.glb exists (under BASE_URL). Vite's dev server answers
    * missing files with index.html, so the content type is checked too.
    * Returns null when there is no model and the primitive body should be used.
    */
@@ -351,6 +402,7 @@ export class CharacterModel {
   /** Picks the clip from the player's speed (m/s) and crossfades to it. groundY is the terrain under the character. */
   update(dt: number, speed: number, groundY: number) {
     this.time += dt;
+    this.updateLook(dt);
     this.mixer.update(dt);
 
     // Sit and lie never overlap: each one waits until the other has faded out.

@@ -14,6 +14,12 @@ export class Input {
   /** Keyboard press edges waiting to be consumed. */
   private queued: Record<Action, boolean> = { interact: false, sit: false, lie: false };
   private padWas: Record<Action, boolean> = { interact: false, sit: false, lie: false };
+  /** Virtual joystick movement (x right, y forward) and run flag, set by TouchControls. */
+  private touchX = 0;
+  private touchY = 0;
+  private touchRun = false;
+  /** In touch mode, touch drags belong to TouchControls, so they don't also orbit the camera here. */
+  private touchMode = false;
 
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -27,6 +33,7 @@ export class Input {
     window.addEventListener('blur', () => this.keys.clear());
 
     target.addEventListener('pointerdown', (e) => {
+      if (this.touchMode && e.pointerType === 'touch') return;
       this.dragging = true;
       target.setPointerCapture(e.pointerId);
     });
@@ -35,7 +42,7 @@ export class Input {
       target.releasePointerCapture(e.pointerId);
     });
     target.addEventListener('pointermove', (e) => {
-      if (!this.dragging) return;
+      if (!this.dragging || (this.touchMode && e.pointerType === 'touch')) return;
       this.dragX += e.movementX;
       this.dragY += e.movementY;
     });
@@ -62,7 +69,51 @@ export class Input {
     if (v) {
       this.keys.clear();
       this.queued = { interact: false, sit: false, lie: false };
+      this.touchX = this.touchY = 0;
+      this.touchRun = false;
     }
+  }
+
+  /** Turns touch mode on or off. While on, touch drags are not used for camera orbit here. */
+  setTouchMode(on: boolean) {
+    this.touchMode = on;
+  }
+
+  /** Virtual joystick vector (x right, y forward, each in [-1, 1]) and run flag. */
+  setTouchMove(x: number, y: number, running: boolean) {
+    this.touchX = x;
+    this.touchY = y;
+    this.touchRun = running;
+  }
+
+  /** Camera orbit from touch, in drag pixels (same units as a mouse drag). */
+  addLook(dx: number, dy: number) {
+    if (this._typing) return;
+    this.dragX += dx;
+    this.dragY += dy;
+  }
+
+  /** Zoom from touch, in wheel units (positive zooms out). */
+  addZoom(dz: number) {
+    if (this._typing) return;
+    this.wheel += dz;
+  }
+
+  /** Queues an action press exactly as if its key had been pressed. */
+  queuePress(action: Action) {
+    if (!this._typing) this.queued[action] = true;
+  }
+
+  pressInteract() {
+    this.queuePress('interact');
+  }
+
+  pressSit() {
+    this.queuePress('sit');
+  }
+
+  pressLie() {
+    this.queuePress('lie');
   }
 
   private down(...codes: string[]) {
@@ -84,6 +135,8 @@ export class Input {
     if (this.down('KeyS', 'ArrowDown')) y -= 1;
     if (this.down('KeyD', 'ArrowRight')) x += 1;
     if (this.down('KeyA', 'ArrowLeft')) x -= 1;
+    x += this.touchX;
+    y += this.touchY;
 
     const pad = this.gamepad();
     if (pad) {
@@ -98,7 +151,7 @@ export class Input {
   running(): boolean {
     if (this._typing) return false;
     const pad = this.gamepad();
-    return this.down('ShiftLeft', 'ShiftRight') || !!pad?.buttons[0]?.pressed;
+    return this.down('ShiftLeft', 'ShiftRight') || this.touchRun || !!pad?.buttons[0]?.pressed;
   }
 
   /** True once per press of E or gamepad X (button 2); held buttons don't repeat. */

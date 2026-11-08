@@ -46,6 +46,7 @@ export class ChatBubble {
     f.maxLength = MAX_LENGTH;
     f.placeholder = 'Say something…';
     f.autocomplete = 'off';
+    f.enterKeyHint = 'go';
     f.setAttribute('aria-label', 'Chat message');
 
     this.bubble.className = 'chat-bubble';
@@ -84,6 +85,11 @@ export class ChatBubble {
     // Mention the shortcut in the existing HUD help line.
     const help = document.querySelector<HTMLElement>('#hud .help');
     if (help) help.textContent = `${help.textContent?.trimEnd() ?? ''} · Enter — chat`;
+  }
+
+  /** Opens the chat box from a button (the touch Chat button). Does nothing if it is already open. */
+  openChat() {
+    if (!this.open && !this.controls.typing) this.openBox();
   }
 
   private openBox() {

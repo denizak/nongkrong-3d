@@ -40,11 +40,18 @@ const NO_SHADOW = new Set<NatureName>([
  * Places trees, rocks, bushes, decorations, bamboo, lily pads, a rice paddy
  * and the scarecrow (rice is built by PaddyField). Each model is one InstancedMesh per part.
  */
-export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics, assets: NatureAssets): Props {
+export function addProps(
+  scene: THREE.Object3D,
+  terrain: Terrain,
+  physics: Physics,
+  assets: NatureAssets,
+  inCorridor: (x: number, z: number) => boolean,
+): Props {
   const { ColliderDesc } = physics.RAPIER;
   const rand = mulberry32(42);
   const { spawn, pond, paddy } = ZONES;
   const group = new THREE.Group();
+  group.name = 'props';
   scene.add(group);
 
   const range = (a: number, b: number) => a + rand() * (b - a);
@@ -52,6 +59,7 @@ export function addProps(scene: THREE.Scene, terrain: Terrain, physics: Physics,
   const inOrchard = (x: number, z: number) => Math.hypot(x - ORCHARD.x, z - ORCHARD.z) < ORCHARD.r + 3;
 
   const keepClear = (x: number, z: number) => {
+    if (inCorridor(x, z)) return true;
     if (Math.hypot(x - spawn.x, z - spawn.z) < spawn.r) return true;
     if (Math.hypot(x - pond.x, z - pond.z) < pond.r + 2) return true;
     if (Math.abs(x - paddy.x) < paddy.w / 2 + 2 && Math.abs(z - paddy.z) < paddy.d / 2 + 2) return true;

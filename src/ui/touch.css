@@ -1,0 +1,93 @@
+/* Touch controls: joystick, round action buttons and the mobile layout. Scoped to html.touch. */
+
+html.touch, html.touch body {
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+html.touch #app, html.touch #app canvas, html.touch button { touch-action: none; }
+
+/* Virtual joystick. Positioned per frame with transforms; hidden until a touch starts. */
+#touch-layer { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
+.stick-base {
+  position: fixed; left: 0; top: 0; width: 120px; height: 120px; box-sizing: border-box;
+  border-radius: 50%; background: rgba(255, 252, 240, 0.35); border: 2px solid rgba(255, 252, 240, 0.6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1); opacity: 0; transition: opacity 0.15s ease;
+}
+.stick-base.show { opacity: 1; }
+.stick-knob {
+  position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(255, 252, 240, 0.9); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Round action buttons, bottom-right, clear of the iPhone home bar and notch. */
+#touch-buttons {
+  position: fixed; right: calc(env(safe-area-inset-right, 0px) + 14px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px; z-index: 36;
+}
+#touch-buttons .row { display: flex; align-items: center; gap: 10px; }
+.touch-btn {
+  width: 60px; height: 60px; padding: 0; box-sizing: border-box; border: 0; border-radius: 50%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(255, 252, 240, 0.92); color: #2f3b2a;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+  font: 22px/1 system-ui, -apple-system, sans-serif;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.touch-btn .lbl { margin-top: 3px; font: 700 9px/1 system-ui, -apple-system, sans-serif; letter-spacing: 0.03em; color: #5a7a3a; }
+.touch-btn.big { width: 76px; height: 76px; font-size: 28px; }
+.touch-btn.down, .touch-btn:active { transform: scale(0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14); }
+.touch-btn:focus { outline: none; }
+
+/* Mobile layout. The HUD box is hidden; a one-time hint toast replaces it.
+   Top row, inside the safe area: clock top-left with the island pill under it, inventory in one row between, mute top-right. */
+html.touch #hud { display: none; }
+html.touch #clock-pill.clock-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 10px); left: calc(env(safe-area-inset-left, 0px) + 10px);
+  padding: 4px 10px; font-size: 13px;
+}
+html.touch #inventory {
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: var(--hud-col, calc(env(safe-area-inset-left, 0px) + 150px)); right: calc(env(safe-area-inset-right, 0px) + 60px);
+  transform: none; max-width: none; justify-content: center; gap: 4px;
+  max-height: 52px; overflow: hidden; align-content: flex-start;
+}
+/* Island pill under the clock, smaller. Its position comes from IslandPill, which also moves the inventory row. */
+html.touch #island-pill {
+  padding: 3px 9px; font-size: 12px; line-height: 1.4;
+}
+html.touch #inventory .slot { padding: 3px 8px; font-size: 12px; line-height: 1.4; }
+html.touch #toasts { top: calc(env(safe-area-inset-top, 0px) + 66px); }
+/* One-time hint, centred, shown 6 s after the game starts. */
+.touch-hint {
+  position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 33;
+  padding: 8px 16px; border-radius: 999px; white-space: nowrap; pointer-events: none;
+  font: 600 13px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.9); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.touch-hint.show { opacity: 1; }
+/* Prompt pill sits above the button cluster. */
+html.touch #prompt { bottom: calc(env(safe-area-inset-bottom, 0px) + 180px); }
+/* Mute pill top-right inside the safe area, bigger and easier to tap. */
+html.touch #audio-toggle.audio-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 10px);
+  min-width: 42px; height: 38px; font-size: 18px; line-height: 38px;
+}
+/* Dice button for a new robot, just left of the mute pill. */
+html.touch #look-dice {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 58px);
+  z-index: 40; width: 38px; height: 38px; padding: 0; box-sizing: border-box; border: 0; border-radius: 50%;
+  background: rgba(255, 252, 240, 0.92); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  font: 18px/38px system-ui, -apple-system, sans-serif; text-align: center; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+html.touch #look-dice:focus { outline: none; }
+html.touch #look-dice:active { transform: scale(0.92); }
+/* 16px stops iOS from zooming in when the chat box takes focus. */
+html.touch .chat-input { font-size: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); }

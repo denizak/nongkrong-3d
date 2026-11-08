@@ -3,13 +3,14 @@ import type { Player } from '../player/Player';
 import { ZONES } from '../world/Terrain';
 import { Synth, SYNTH_NAMES, type SynthName } from './Synth';
 import { Music } from './Music';
-import { Ambience } from './Ambience';
+import { Ambience, type WorldState } from './Ambience';
 import './audio.css';
 
 /** Decoded OGG samples in public/audio. Variants like step_grass_0..4 can be played by base name. */
 const SAMPLES = [
   'step_grass_0', 'step_grass_1', 'step_grass_2', 'step_grass_3', 'step_grass_4',
   'step_sand_0', 'step_sand_1', 'step_sand_2', 'step_sand_3', 'step_sand_4',
+  'step_wood_0', 'step_wood_1', 'step_wood_2', 'step_wood_3', 'step_wood_4',
   'thud_0', 'thud_1', 'thud_2',
   'pop_0', 'pop_1', 'pop_2',
   'knock_0', 'knock_1', 'knock_2',
@@ -21,6 +22,7 @@ const SAMPLES = [
 const FALLBACK: Record<string, SynthName> = {
   step_grass: 'rustle',
   step_sand: 'rustle',
+  step_wood: 'rustle',
   thud: 'plop',
   pop: 'blip',
   knock: 'plop',
@@ -73,6 +75,9 @@ export class AudioManager {
   private listenerPos = new THREE.Vector3();
   private listenerFwd = new THREE.Vector3(0, 0, -1);
   private listenerRight = new THREE.Vector3(1, 0, 0);
+  private world: WorldState = { rain: 0, night: 0 };
+  /** True when a local (x, z) is on a bridge. Set by main, so footsteps can sound like wood. */
+  onBridge: (x: number, z: number) => boolean = () => false;
   private lastPos = new THREE.Vector3();
   private hasLast = false;
   private speed = 0;
@@ -156,6 +161,12 @@ export class AudioManager {
     this.play('chirp', { at, volume });
   }
 
+  /** Weather and time of day, set once per frame from main. */
+  setWorld(rain: number, night: number) {
+    this.world.rain = rain;
+    this.world.night = night;
+  }
+
   /** Called once per frame from main with the player and the active camera. */
   update(dt: number, player: Player, camera: THREE.Camera) {
     camera.getWorldDirection(this.listenerFwd);
@@ -167,7 +178,9 @@ export class AudioManager {
     camera.getWorldPosition(this.listenerPos);
 
     if (!this.ctx) return;
-    this.ambience?.update(dt, player.position);
+    // Music is 30% quieter at night.
+    this.musicBus?.gain.setTargetAtTime(0.35 * (1 - 0.3 * this.world.night), this.ctx.currentTime, 0.8);
+    this.ambience?.update(dt, player.position, this.world, this.onBridge(player.position.x, player.position.z));
     this.updateFootsteps(dt, player);
   }
 
@@ -225,7 +238,7 @@ export class AudioManager {
     this.synth = new Synth(ctx, this.noise);
     this.music = new Music(ctx, this.noise, this.musicBus);
     this.music.start();
-    this.ambience = new Ambience(ctx, this.noise, this.ambienceBus, this);
+    this.ambience = new Ambience(ctx, this.noise, this.ambienceBus, this, this.synth);
     this.ambience.start();
     if (ctx.state === 'suspended') void ctx.resume();
     this.syncPill();
@@ -268,6 +281,12 @@ export class AudioManager {
   }
 
   /** Footsteps by measured ground speed: walk every 0.42 s, run every 0.29 s. Silent while sitting or lying. */
+  /** Forgets the last position, so a teleport or island shift is not heard as a sprint. */
+  resetFootsteps() {
+    this.hasLast = false;
+    this.speed = 0;
+  }
+
   private updateFootsteps(dt: number, player: Player) {
     const p = player.position;
     if (this.hasLast && dt > 0) {
@@ -288,7 +307,9 @@ export class AudioManager {
     this.stepTimer = running ? RUN_STEP : WALK_STEP;
 
     const z = ZONES.paddy;
-    if (Math.abs(p.x - z.x) < z.w / 2 && Math.abs(p.z - z.z) < z.d / 2) {
+    if (this.onBridge(p.x, p.z)) {
+      this.play('step_wood', { volume: running ? 0.7 : 0.55, rateJitter: 0.1 });
+    } else if (Math.abs(p.x - z.x) < z.w / 2 && Math.abs(p.z - z.z) < z.d / 2) {
       // Paddy mud: a softer, slower step with a wet plop on top.
       this.play('step_grass', { volume: 0.45, rate: 0.8, rateJitter: 0.08 });
       this.play('plop', { volume: 0.2 });

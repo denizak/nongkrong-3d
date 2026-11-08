@@ -147,6 +147,17 @@ export class Fishing {
     }
   }
 
+  /** Drops the line at once with no reel animation, e.g. when the island changes. */
+  abort() {
+    for (const s of this.splashes) {
+      this.deps.scene.remove(s.mesh);
+      (s.mesh.material as THREE.Material).dispose();
+    }
+    this.splashes = [];
+    this.setIdle();
+    this.bang.classList.remove('show');
+  }
+
   cast(target: THREE.Vector3, water: WaterKind) {
     this.target.copy(target);
     this.water = water;

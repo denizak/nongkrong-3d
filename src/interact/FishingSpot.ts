@@ -21,6 +21,8 @@ export interface FishingSpotDeps {
   inventory: Inventory;
   pedia: Fishpedia;
   hand: THREE.Object3D | null;
+  /** True when (x, z) is on a bridge, which counts as dry ground for casting. */
+  onBridge?: (x: number, z: number) => boolean;
 }
 
 /** "The water in front of the player": offers Fish when the spot is deep enough, and runs the fishing session. */
@@ -44,6 +46,11 @@ export class FishingSpot implements Interactable {
   /** True while fishing: the player is held in place and other interactables are paused. */
   get locked() {
     return this.fishing.active;
+  }
+
+  /** Cancels any cast without the reel animation. Used when the island changes. */
+  abort() {
+    this.fishing.abort();
   }
 
   prompt(): string | null {
@@ -87,7 +94,7 @@ export class FishingSpot implements Interactable {
     this.target.set(x, WATER_LEVEL, z);
     this.position.copy(this.target);
     const deep = terrain.heightAt(x, z) < WATER_LEVEL - MIN_DEPTH;
-    const onShore = terrain.heightAt(p.x, p.z) > WATER_LEVEL - MIN_DEPTH;
+    const onShore = terrain.heightAt(p.x, p.z) > WATER_LEVEL - MIN_DEPTH || (this.deps.onBridge?.(p.x, p.z) ?? false);
     this.available = deep && onShore;
     const pond = ZONES.pond;
     this.water = Math.hypot(x - pond.x, z - pond.z) <= pond.r + 2 ? 'pond' : 'sea';

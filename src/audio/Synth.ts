@@ -134,6 +134,47 @@ export class Synth {
     }
   }
 
+  /** Distant thunder: a looped noise swell through a 180 Hz lowpass, about 6 s long. */
+  thunder(out: AudioNode, t: number, vol: number) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.loop = true;
+    src.start(t, rand(0, 1.5));
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180;
+    lp.Q.value = 0.7;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.6 * vol), t + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 5.5);
+    src.connect(lp).connect(g).connect(out);
+    src.stop(t + 6);
+  }
+
+  /** One burst of cricket song: a 4.5 kHz sine chopped into 6 to 10 quick pulses. */
+  cricketBurst(out: AudioNode, t: number, vol: number) {
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = rand(4300, 4900);
+    const g = this.ctx.createGain();
+    g.gain.value = 0;
+    osc.connect(g).connect(out);
+    const pulses = 6 + Math.floor(rand(0, 5));
+    const gap = 0.07;
+    const peak = 0.22 * vol;
+    for (let k = 0; k < pulses; k++) {
+      const on = t + k * gap;
+      g.gain.setValueAtTime(0, on);
+      g.gain.linearRampToValueAtTime(peak, on + 0.003);
+      g.gain.setValueAtTime(peak, on + 0.022);
+      g.gain.linearRampToValueAtTime(0, on + 0.027);
+    }
+    const end = t + pulses * gap;
+    osc.start(t);
+    osc.stop(end + 0.02);
+  }
+
   /** Soft UI pop: a short rising sine. */
   private blip(out: AudioNode, t: number, vol: number) {
     const osc = this.ctx.createOscillator();

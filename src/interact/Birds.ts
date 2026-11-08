@@ -57,6 +57,12 @@ export class Birds {
     this.wingGeo.computeVertexNormals();
   }
 
+  /** Despawns every bird, e.g. after the island changes. */
+  clear() {
+    for (const b of this.birds) this.scene.remove(b.root);
+    this.birds = [];
+  }
+
   /** Birds currently alive. */
   get count() {
     return this.birds.length;

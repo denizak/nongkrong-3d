@@ -54,6 +54,12 @@ export class Pickups {
     });
   }
 
+  /** Removes every mango on the ground, e.g. after the island changes. */
+  clear() {
+    for (const f of this.fruits) this.scene.remove(f.mesh);
+    this.fruits = [];
+  }
+
   update(dt: number, playerPos: THREE.Vector3, time: number) {
     const target = new THREE.Vector3(playerPos.x, playerPos.y + 0.9, playerPos.z);
     for (let i = this.fruits.length - 1; i >= 0; i--) {

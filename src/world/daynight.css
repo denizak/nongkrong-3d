@@ -1,0 +1,8 @@
+/* Clock and weather pill, top-left under the page edge. */
+#clock-pill.clock-pill {
+  position: fixed; top: 16px; left: 16px; z-index: 30;
+  padding: 6px 14px; border-radius: 999px; pointer-events: none; user-select: none;
+  font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}

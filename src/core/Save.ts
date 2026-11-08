@@ -1,11 +1,9 @@
 import type { CameraRig } from '../player/CameraRig';
-import { WORLD_LIMIT, type Player } from '../player/Player';
-import type { Terrain } from '../world/Terrain';
+import type { Player } from '../player/Player';
+import { START_CELL, COLS, ROWS, type Archipelago, type Cell, type IslandState, type IslandStates } from '../world/Archipelago';
 
 const KEY = 'nongkrong.save';
 const SAVE_EVERY_MS = 5000;
-/** Below this height the spot counts as water, so a restore falls back to the spawn. */
-const MIN_LAND = -0.3;
 
 interface SaveData {
   v: 1;
@@ -15,25 +13,53 @@ interface SaveData {
   yaw: number;
   pitch: number;
   distance: number;
+  /** Game clock in hours (0-24). Optional, so older saves still load. */
+  clock?: number;
+  /** Live island cell. Older saves have none and start on the start island. */
+  cell?: Cell;
+  /** Saved state of every island the player has changed. */
+  islands?: Record<string, IslandState>;
 }
 
-/** Saves the player's spot and the camera orbit to localStorage, and restores them on boot. */
+/** The part of DayNight that Save needs. */
+export interface SavedClock {
+  time: number;
+  setTime(hour: number): void;
+}
+
+/** What Save needs from the game: the grid, island state, and the switch and reset actions. */
+export interface SaveLinks {
+  clock?: SavedClock;
+  archipelago: Archipelago;
+  islands: IslandStates;
+  /** Stores the live island's progress into `islands`, before a save. */
+  captureLive(): void;
+  /** Moves to a cell and local spot (places the player and loads that island's state). */
+  enter(cell: Cell, x: number, z: number, heading: number): void;
+  /** Starts over on the start island with fresh state. */
+  newGame(): void;
+}
+
+/** Saves the player's spot, the island and the camera orbit to localStorage, and restores them on boot. */
 export class Save {
   constructor(
     private player: Player,
     private rig: CameraRig,
-    private terrain: Terrain,
+    private links: SaveLinks,
   ) {}
 
-  /** Puts the player and camera back where they were saved. Returns false (keeps the spawn) if the save is missing or invalid. */
+  /** Puts the player, island and camera back where they were saved. Returns false when there was no save. */
   restore(): boolean {
     const d = read();
     if (!d) return false;
-    if (!Number.isFinite(d.x) || !Number.isFinite(d.z) || !Number.isFinite(d.heading)) return false;
-    if (Math.hypot(d.x, d.z) >= WORLD_LIMIT) return false;
-    if (this.terrain.heightAt(d.x, d.z) <= MIN_LAND) return false;
-
-    this.player.place(d.x, d.z, d.heading);
+    const { clock, islands } = this.links;
+    if (clock && Number.isFinite(d.clock)) clock.setTime(d.clock!);
+    islands.load(d.islands);
+    const cell = validCell(d.cell) ?? START_CELL;
+    const x = Number.isFinite(d.x) ? d.x : 0;
+    const z = Number.isFinite(d.z) ? d.z : 0;
+    const heading = Number.isFinite(d.heading) ? d.heading : 0;
+    this.links.enter({ col: cell.col, row: cell.row }, x, z, heading);
     this.rig.yaw = finite(d.yaw, this.rig.yaw);
     this.rig.pitch = clamp(finite(d.pitch, this.rig.pitch), 0.15, 1.2);
     this.rig.distance = clamp(finite(d.distance, this.rig.distance), 5, 22);
@@ -49,16 +75,18 @@ export class Save {
     });
   }
 
-  /** Clears the save and moves the player and camera back to the spawn. */
+  /** Clears the save, all island progress, and moves the player and camera back to the start island's spawn. */
   reset() {
     localStorage.removeItem(KEY);
-    this.player.place(0, 0, 0);
+    this.links.clock?.setTime(9);
+    this.links.newGame();
     this.rig.yaw = 0;
     this.rig.pitch = 0.55;
     this.rig.distance = 11;
   }
 
   write = () => {
+    this.links.captureLive();
     const p = this.player.position;
     const data: SaveData = {
       v: 1,
@@ -68,6 +96,9 @@ export class Save {
       yaw: this.rig.yaw,
       pitch: this.rig.pitch,
       distance: this.rig.distance,
+      clock: this.links.clock?.time,
+      cell: { ...this.links.archipelago.cell },
+      islands: this.links.islands.toJSON(),
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(data));
@@ -84,6 +115,11 @@ function read(): SaveData | null {
   } catch {
     return null;
   }
+}
+
+function validCell(c: Cell | undefined): Cell | null {
+  if (!c || !Number.isInteger(c.col) || !Number.isInteger(c.row)) return null;
+  return c.col >= 0 && c.col < COLS && c.row >= 0 && c.row < ROWS ? c : null;
 }
 
 function finite(v: number, fallback: number) {

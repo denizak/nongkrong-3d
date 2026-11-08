@@ -64,7 +64,7 @@ export async function loadNatureAssets(onLoaded?: () => void): Promise<NatureAss
 }
 
 async function loadModel(loader: GLTFLoader, name: NatureName): Promise<NatureModel> {
-  const gltf = await loader.loadAsync(`/models/nature/${name}.glb`);
+  const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/nature/${name}.glb`);
   const root = gltf.scene;
   root.updateMatrixWorld(true);
   const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
