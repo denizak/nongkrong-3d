@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import type { MessageAction, Room } from 'trystero';
+import type { JoinError, JoinRoomConfig, MessageAction, Room, TurnServerConfig } from 'trystero';
 import { decodeLook, encodeLook, makeLook, randomLook, type Look } from '../player/Look';
 import type { Pose } from '../player/CharacterModel';
 import { ISLAND_COUNT, inProxyWindow } from '../world/Islands';
@@ -27,7 +27,25 @@ const NAME_KEY = 'nongkrong.name';
 const WORDS = ['Kelapa', 'Mangga', 'Pisang', 'Nanas', 'Jeruk', 'Pandan', 'Melati', 'Kenari', 'Ombak', 'Pelangi'];
 const FAKE_RADIUS = 4;
 const FAKE_SPEED = 2;
+/** Nostr relays used to find peers. Passed explicitly (full wss URLs) so one dead relay cannot stall joining. */
+export const RELAY_URLS = [
+  'wss://nos.lol',
+  'wss://relay.grigic.org',
+  'wss://relay.degmods.com',
+  'wss://relay.aarpia.com',
+  'wss://nostr.rblb.it',
+  'wss://relay.layer.systems',
+  'wss://nostr.red5d.dev',
+  'wss://relay.nostr.dev.br',
+];
+/** Offline only if no relay socket is open this long after joining. */
+const RELAY_TIMEOUT_MS = 12000;
+const WATCH_MS = 500;
 
+/**
+ * 'connecting': joining, no relay open yet. 'online': at least one relay open (peers may or may not be connected).
+ * 'offline': joining threw, or no relay opened in time.
+ */
 export type NetStatus = 'off' | 'connecting' | 'online' | 'offline';
 export type PoseCode = 0 | 1 | 2;
 const POSES: Pose[] = ['stand', 'sit', 'lie'];
@@ -118,6 +136,25 @@ function parseState(d: unknown): Omit<Snapshot, 't'> | null {
 /** The look used for peers whose look is missing or invalid. */
 const DEFAULT_LOOK = makeLook(0, '#f08a6c', '#3b434c');
 
+/**
+ * TURN servers from build-time env (VITE_TURN_URLS, comma separated; optional VITE_TURN_USERNAME and
+ * VITE_TURN_CREDENTIAL). Null when unset, so the game uses STUN only.
+ */
+export function turnServers(): TurnServerConfig[] | null {
+  const urls = (import.meta.env.VITE_TURN_URLS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (urls.length === 0) return null;
+  return [
+    {
+      urls,
+      username: import.meta.env.VITE_TURN_USERNAME || undefined,
+      credential: import.meta.env.VITE_TURN_CREDENTIAL || undefined,
+    },
+  ];
+}
+
 function newPeer(id: string, name: string, look: Look, fake = false): RemotePeer {
   return { id, name, look, snaps: [], lastState: 0, lastChat: -Infinity, fake, angle: Math.random() * Math.PI * 2, fakePose: 'stand' };
 }
@@ -164,10 +201,21 @@ export class Net {
   private fakeCount = 0;
   private lastMe: NetSelf | null = null;
   private started = false;
+  private retried = false;
+  private sockets: () => Record<string, WebSocket> = () => ({});
+  private startedAt = 0;
+  private watchTimer = 0;
+  /** Peers whose direct connection failed after signalling. Cleared when they connect or leave. */
+  readonly failedPeers = new Set<string>();
+  /** The latest per-peer connection error from Trystero (diagnostics). */
+  lastError = '';
+  /** Number of per-peer connection errors reported so far. */
+  errorCount = 0;
 
   constructor(private getLook: () => Look, opts: { solo?: boolean } = {}) {
     this.solo = !!opts.solo;
     this.name = loadName();
+    if (!this.solo) window.addEventListener('online', () => void this.onNetworkBack());
   }
 
   /** The Trystero peer id of this player. Empty until joined. */
@@ -193,8 +241,8 @@ export class Net {
   }
 
   /**
-   * Joins the global room. Loads Trystero on demand so the game is not delayed. Any failure
-   * leaves the status 'offline' and the game keeps running.
+   * Joins the global room. Loads Trystero on demand so the game is not delayed. Joining that throws
+   * leaves the status 'offline'; per-peer connection failures are only recorded (see onJoinError).
    */
   async start(): Promise<void> {
     if (this.started || this.solo) return;
@@ -202,11 +250,15 @@ export class Net {
     this.setStatus('connecting');
     try {
       const t = await import('trystero');
-      const room = t.joinRoom({ appId: APP_ID }, ROOM_ID, {
-        onJoinError: (e) => {
-          console.warn('Multiplayer join failed', e);
-          this.setStatus('offline');
-        },
+      this.sockets = () => t.getRelaySockets();
+      const turn = turnServers();
+      const config: JoinRoomConfig = {
+        appId: APP_ID,
+        relayConfig: { urls: RELAY_URLS },
+        ...(turn ? { turnConfig: turn } : {}),
+      };
+      const room = t.joinRoom(config, ROOM_ID, {
+        onJoinError: (e) => this.onJoinError(e),
       });
       this.room = room;
       this.peerId = t.selfId;
@@ -219,11 +271,65 @@ export class Net {
       room.onPeerJoin = (id) => this.onJoin(id);
       room.onPeerLeave = (id) => this.onLeave(id);
       window.addEventListener('pagehide', () => void room.leave().catch(() => {}), { once: true });
-      this.setStatus('online');
+      this.startedAt = performance.now();
+      this.startWatch();
     } catch (err) {
       console.warn('Multiplayer unavailable, playing offline.', err);
       this.setStatus('offline');
     }
+  }
+
+  /** Relay sockets this client uses, and whether each is open right now. */
+  relayStates(): { url: string; open: boolean }[] {
+    let socks: Record<string, WebSocket> = {};
+    try {
+      socks = this.sockets() ?? {};
+    } catch {
+      // Trystero not loaded yet: every relay counts as closed.
+    }
+    return RELAY_URLS.map((url) => ({ url, open: socks[url]?.readyState === WebSocket.OPEN }));
+  }
+
+  /** Polls the relays: 'online' once any is open, 'offline' if none opened within the timeout. */
+  private startWatch() {
+    window.clearInterval(this.watchTimer);
+    this.watchTimer = window.setInterval(() => this.checkRelays(), WATCH_MS);
+    this.checkRelays();
+  }
+
+  private checkRelays() {
+    const anyOpen = this.relayStates().some((r) => r.open);
+    if (anyOpen && this.status !== 'online') {
+      this.setStatus('online');
+    } else if (!anyOpen && this.status === 'connecting' && performance.now() - this.startedAt >= RELAY_TIMEOUT_MS) {
+      this.setStatus('offline');
+    }
+  }
+
+  /** Trystero reports a peer whose direct connection failed. The room itself still works. */
+  private onJoinError(e: JoinError) {
+    this.errorCount++;
+    this.lastError = e.error;
+    if (!this.failedPeers.has(e.peerId)) {
+      this.failedPeers.add(e.peerId);
+      console.warn(`Could not connect directly to player ${e.peerId}: ${e.error}`);
+    }
+    this.notify();
+  }
+
+  /** The browser came back online after we gave up: try joining again, once. */
+  private async onNetworkBack() {
+    if (this.status !== 'offline' || this.retried) return;
+    this.retried = true;
+    if (this.room) await this.room.leave().catch(() => {});
+    this.room = null;
+    this.st = null;
+    this.hi = null;
+    this.ch = null;
+    this.remotes.clear();
+    this.failedPeers.clear();
+    this.started = false;
+    await this.start();
   }
 
   /** Sets the display name (trimmed, max 20). Returns the accepted name, or null if it is empty. */
@@ -342,12 +448,15 @@ export class Net {
 
   private onJoin(id: string) {
     if (!this.remotes.has(id)) this.remotes.set(id, newPeer(id, t('net.friend'), DEFAULT_LOOK));
+    this.failedPeers.delete(id);
+    if (this.status !== 'online') this.setStatus('online');
     this.hi?.send(this.hiPayload(), { target: id }).catch(() => {});
     this.notify();
   }
 
   private onLeave(id: string) {
     this.remotes.delete(id);
+    this.failedPeers.delete(id);
     this.notify();
   }
 

@@ -35,6 +35,7 @@ import { LookControls } from './player/LookControls';
 import { Net } from './net/Net';
 import { RemotePlayers } from './net/RemotePlayers';
 import { NetPill } from './net/NetPill';
+import { NetDebug } from './net/NetDebug';
 import { Minimap } from './ui/Minimap';
 import { FullMap } from './ui/FullMap';
 import { IslandTitle } from './ui/IslandTitle';
@@ -185,6 +186,7 @@ async function boot() {
   });
   new IslandPill(archipelago);
   const netPill = new NetPill(net, archipelago);
+  new NetDebug(net);
   const mapWorld = { arch: archipelago, net, bridges, player };
   const minimap = new Minimap(mapWorld, shapes);
   const fullMap = new FullMap(mapWorld, shapes, input);

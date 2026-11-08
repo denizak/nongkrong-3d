@@ -23,3 +23,19 @@
   background: rgba(255, 252, 240, 0.95); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 #loading .name-input:focus-visible { box-shadow: 0 0 0 2px #5a7a3a, 0 4px 12px rgba(0, 0, 0, 0.15); }
+
+/* Clickable only when peers were found but could not connect: opens the help note. */
+#net-pill.net-pill--action { pointer-events: auto; cursor: pointer; }
+
+#net-help {
+  position: fixed; left: 16px; top: 140px; z-index: 31; max-width: 300px; box-sizing: border-box;
+  padding: 10px 14px; border-radius: 14px; pointer-events: none;
+  font: 500 13px/1.45 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.97); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+}
+
+#net-debug {
+  position: fixed; left: 8px; bottom: 92px; z-index: 40; pointer-events: none; margin: 0;
+  padding: 6px 8px; border-radius: 6px; max-width: 92vw; box-sizing: border-box;
+  font: 11px/1.4 ui-monospace, Menlo, monospace; color: #e8f5e0; background: rgba(20, 30, 20, 0.78);
+}

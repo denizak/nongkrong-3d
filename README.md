@@ -32,6 +32,18 @@ Seret untuk memutar kamera dan scroll untuk zoom. Ganti bahasa lewat tombol EN/I
 - Mancing di kolam atau laut. Tekan E saat ikan menggigit, lalu lihat koleksimu di Fishpedia.
 - Colek orang-orangan sawah, dan ajak temanmu ngobrol. Ketik `/nama NamaBaru` untuk ganti nama.
 
+### Masalah multiplayer
+
+Pill di bawah nama pulau menunjukkan kondisinya:
+
+- **👥 mencari pemain…**: sedang mencari relay dan pemain lain.
+- **👥 0 online**: terhubung ke jaringan pencarian, belum ada pemain di dekatmu.
+- **👥 N online · M di dekat**: N pemain tersambung, M di pulau dekatmu.
+- **👥 ⚠️ N pemain terdeteksi tapi gagal tersambung**: pemain ditemukan, tapi koneksi langsung gagal. Klik pill untuk penjelasan.
+- **👥 offline**: tidak bisa mencari pemain sama sekali (misalnya tidak ada internet).
+
+Koneksi langsung (P2P) kadang gagal di jaringan tertentu, misalnya jaringan kantor atau kampus dan beberapa VPN. Solusinya adalah server TURN sebagai perantara. Untuk menambahkannya, buat akun TURN (atau jalankan coturn sendiri), lalu di repo GitHub isi variabel `TURN_URLS` (contoh `turn:host:3478,turns:host:5349`) dan secret `TURN_USERNAME` serta `TURN_CREDENTIAL`. Catatan: kredensial di situs statis bisa dilihat siapa pun, jadi gunakan kredensial gratis atau yang dibatasi laju pemakaiannya. Untuk pengecekan, tambahkan `?netdebug` ke URL.
+
 ---
 
 ## English
@@ -63,6 +75,18 @@ Drag to orbit the camera and scroll to zoom.
 Players meet peer-to-peer: WebRTC connections, with public Nostr relays used only to find each other (via [Trystero](https://github.com/dmotz/trystero)). Everyone is in one shared world. You see other robots on your island and on the islands next to it, with their names and chat bubbles. Type `/name NewName` in the chat box to change your name, or set it on the loading screen.
 
 Add `?solo` to the URL to play offline with no networking. Strict networks (some corporate or school firewalls) may block direct connections, in which case you simply won't see other players and the HUD shows the count.
+
+## Multiplayer troubleshooting
+
+The pill under the island name shows the connection state:
+
+- **👥 looking for players…**: searching the relays for other players.
+- **👥 0 online**: connected to the search network, no other players yet.
+- **👥 N online · M nearby**: N players connected, M on islands next to yours.
+- **👥 ⚠️ N player(s) found but could not connect**: players were found, but the direct connection failed. Click the pill for an explanation.
+- **👥 offline**: no way to search for players at all (for example, no internet).
+
+Direct (P2P) connections sometimes fail on certain networks, such as some office, school or VPN networks. A TURN relay can carry the traffic instead. To add one, create a TURN account (or run coturn yourself), then set the repo variable `TURN_URLS` (for example `turn:host:3478,turns:host:5349`) and the secrets `TURN_USERNAME` and `TURN_CREDENTIAL`. Note that credentials in a static site are public to anyone who loads the page, so use a free-tier or rate-limited credential. Add `?netdebug` to the URL to see connection details.
 
 ## Running locally
 
