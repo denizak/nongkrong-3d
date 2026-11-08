@@ -1,5 +1,5 @@
 /* Multiplayer HUD and remote name tags. Same cream pills as the rest of the HUD. */
-#net-pill {
+#net-pill, #player-name {
   position: fixed; top: 100px; left: 16px; z-index: 30;
   padding: 6px 14px; border-radius: 999px; pointer-events: none; user-select: none;
   font: 600 14px/1.4 system-ui, -apple-system, sans-serif; color: #2f3b2a;

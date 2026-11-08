@@ -8,11 +8,12 @@ const REFRESH_S = 0.25;
 /**
  * "👥 3 online · 1 nearby", under the island pill. Says "offline" only when joining is impossible.
  * When peers were found but could not connect, the pill explains it and a click shows a help note.
- * Hidden in ?solo.
+ * The connection status is hidden in ?solo; the player's own name remains visible.
  */
 export class NetPill {
   private el = document.createElement('div');
   private help = document.createElement('div');
+  private nameEl = document.createElement('div');
   private text = '';
   private timer = 0;
   private failing = false;
@@ -23,13 +24,14 @@ export class NetPill {
   ) {
     this.el.id = 'net-pill';
     this.el.hidden = net.solo;
+    this.nameEl.id = 'player-name';
     this.help.id = 'net-help';
     this.help.hidden = true;
     this.help.textContent = t('net.failedHelp');
     this.el.addEventListener('click', () => {
       if (this.failing) this.help.hidden = !this.help.hidden;
     });
-    document.body.append(this.el, this.help);
+    document.body.append(this.el, this.nameEl, this.help);
   }
 
   /** Call every frame; refreshes the text a few times a second. */
@@ -39,6 +41,8 @@ export class NetPill {
     this.timer = REFRESH_S;
 
     const net = this.net;
+    const name = `${t('loading.name')}: ${net.name}`;
+    if (this.nameEl.textContent !== name) this.nameEl.textContent = name;
     const failed = net.online === 0 && net.failedPeers.size > 0;
     let text: string;
     if (net.status === 'connecting') text = t('net.connecting');
@@ -62,8 +66,11 @@ export class NetPill {
       const r = island.getBoundingClientRect();
       this.el.style.left = `${r.left}px`;
       this.el.style.top = `${r.bottom + 6}px`;
+      const nameTop = r.bottom + 6 + (net.solo ? 0 : this.el.offsetHeight + 6);
+      this.nameEl.style.left = `${r.left}px`;
+      this.nameEl.style.top = `${nameTop}px`;
       this.help.style.left = `${r.left}px`;
-      this.help.style.top = `${r.bottom + 6 + this.el.offsetHeight + 6}px`;
+      this.help.style.top = `${nameTop + this.nameEl.offsetHeight + 6}px`;
     }
   }
 }
