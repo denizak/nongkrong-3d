@@ -3,13 +3,13 @@ import type { Archipelago } from '../world/Archipelago';
 import type { Bridges } from '../world/Bridges';
 import type { IslandShapes } from '../world/IslandShapes';
 import type { Net } from '../net/Net';
+import { quality } from '../core/Quality';
 import { drawArrow, drawBridges, drawDot, drawShapes, localWorld, remoteMarks, SEA, CREAM, type PlayerLike } from './mapCommon';
 
 /** Metres across the minimap (diameter). */
 const RANGE = 420;
 const SIZE = 150;
 const SIZE_TOUCH = 110;
-const PERIOD = 0.1;
 
 export interface MapWorld {
   arch: Archipelago;
@@ -45,11 +45,12 @@ export class Minimap {
     this.draw();
   }
 
-  /** Call once per frame. Redraws every PERIOD seconds. */
+  /** Call once per frame. Redraws every quality.knobs.minimapPeriod seconds (10 Hz high, 5 Hz low). */
   update(dt: number) {
+    const period = quality.knobs.minimapPeriod;
     this.acc += dt;
-    if (this.acc < PERIOD) return;
-    this.acc = Math.min(this.acc - PERIOD, PERIOD);
+    if (this.acc < period) return;
+    this.acc = Math.min(this.acc - period, period);
     this.draw();
   }
 

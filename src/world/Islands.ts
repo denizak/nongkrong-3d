@@ -5,6 +5,7 @@
  * where the origin is that island's centre.
  */
 import { mulberry32 } from './Terrain';
+import { quality } from '../core/Quality';
 
 export const MAIN_ID = 0;
 export const NORMAL_COUNT = 49;
@@ -28,7 +29,7 @@ export const NORMAL_REACH = 140;
 /** The main island wins a contested point this many metres earlier (its radius is about 120 m, a normal one's about 70 m). */
 const MAIN_BIAS = 120;
 
-/** Islands whose centre is within this many metres of the live island are drawn as proxies. */
+/** Islands whose centre is within this many metres of the live island are drawn as proxies. High tier value; the live range comes from quality.knobs.proxyRange. */
 export const PROXY_RANGE = 320;
 
 /** Half the width of the map image of each kind, in metres (the terrain squares are 380 m and 170 m). */
@@ -227,7 +228,7 @@ export function islandAt(x: number, z: number): IslandDef | null {
 export function inProxyWindow(from: number, other: number): boolean {
   const a = centreOf(from);
   const b = centreOf(other);
-  return Math.hypot(b.x - a.x, b.z - a.z) <= PROXY_RANGE;
+  return Math.hypot(b.x - a.x, b.z - a.z) <= quality.knobs.proxyRange;
 }
 
 /**

@@ -19,12 +19,15 @@ export interface LiveRoot {
 interface Template {
   shared: Baked[];
   terrainGeo: THREE.BufferGeometry;
+  /** The same terrain with every other vertex dropped (medium and low). */
+  terrainGeoLite: THREE.BufferGeometry;
   terrainMat: THREE.Material;
   live: LiveRoot;
 }
 
 interface Proxy {
   object: THREE.Group;
+  terrain: THREE.Mesh;
   kind: IslandKind;
   /** [live, proxy] pairs of SYNC_NAMES objects, matched by traversal order. */
   pairs: Array<[THREE.Object3D, THREE.Object3D]>;
@@ -39,6 +42,7 @@ interface Proxy {
 export class Proxies {
   private items = new Map<number, Proxy>();
   private templates: Record<IslandKind, Template>;
+  private decimated = false;
 
   constructor(
     private scene: THREE.Scene,
@@ -49,9 +53,25 @@ export class Proxies {
         live.root,
         (o) => o === live.terrain || o === live.torches || SYNC_NAMES.has(o.name) || STRIP_NAMES.has(o.name),
       );
-      return { shared, terrainGeo: live.terrain.geometry, terrainMat: live.terrain.material as THREE.Material, live };
+      const terrainGeo = live.terrain.geometry;
+      return {
+        shared,
+        terrainGeo,
+        terrainGeoLite: decimateTerrain(terrainGeo),
+        terrainMat: live.terrain.material as THREE.Material,
+        live,
+      };
     };
     this.templates = { normal: bake(roots.normal), main: bake(roots.main) };
+  }
+
+  /** Proxy terrain with half the vertices (medium and low) or the full terrain (high). Applies to every proxy at once. */
+  setDecimate(on: boolean) {
+    this.decimated = on;
+    for (const p of this.items.values()) {
+      const t = this.templates[p.kind];
+      p.terrain.geometry = on ? t.terrainGeoLite : t.terrainGeo;
+    }
   }
 
   /** Number of proxies created so far (shown or hidden). */
@@ -101,7 +121,7 @@ export class Proxies {
     const object = new THREE.Group();
     object.name = `proxy ${id}`;
     for (const s of t.shared) object.add(new THREE.Mesh(s.geometry, s.material));
-    const terrain = new THREE.Mesh(t.terrainGeo, t.terrainMat);
+    const terrain = new THREE.Mesh(this.decimated ? t.terrainGeoLite : t.terrainGeo, t.terrainMat);
     const torches = t.live.torches.clone(true);
     const lights: THREE.Light[] = [];
     torches.traverse((o) => {
@@ -117,10 +137,51 @@ export class Proxies {
     const copySync = collectNamed(torches);
     const pairs = liveSync.map((live, i) => [live, copySync[i]] as [THREE.Object3D, THREE.Object3D]);
     this.scene.add(object);
-    const proxy: Proxy = { object, kind, pairs };
+    const proxy: Proxy = { object, terrain, kind, pairs };
     this.items.set(id, proxy);
     return proxy;
   }
+}
+
+/**
+ * The terrain grid with every other vertex in each direction, so half the cells per side. Vertex positions and
+ * colours come from the grid; the normals are recomputed. Falls back to the original when the grid is odd-sized.
+ */
+function decimateTerrain(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = geo.getAttribute('position');
+  const col = geo.getAttribute('color');
+  const n = Math.round(Math.sqrt(pos.count));
+  const segments = n - 1;
+  if (segments % 2 !== 0 || !col) return geo;
+  const m = segments / 2 + 1;
+  const P = new Float32Array(m * m * 3);
+  const C = new Float32Array(m * m * 3);
+  for (let j = 0; j < m; j++) {
+    for (let i = 0; i < m; i++) {
+      const src = (j * 2) * n + i * 2;
+      const dst = j * m + i;
+      P.set([pos.getX(src), pos.getY(src), pos.getZ(src)], dst * 3);
+      C.set([col.getX(src), col.getY(src), col.getZ(src)], dst * 3);
+    }
+  }
+  const idx = new Uint32Array(segments * segments * 3 * 2);
+  let k = 0;
+  for (let j = 0; j < segments / 2; j++) {
+    for (let i = 0; i < segments / 2; i++) {
+      const a = j * m + i;
+      const b = (j + 1) * m + i;
+      const cc = (j + 1) * m + i + 1;
+      const d = j * m + i + 1;
+      idx[k++] = a; idx[k++] = b; idx[k++] = d;
+      idx[k++] = b; idx[k++] = cc; idx[k++] = d;
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  out.setIndex(new THREE.BufferAttribute(idx.subarray(0, k), 1));
+  out.computeVertexNormals();
+  return out;
 }
 
 function collectNamed(root: THREE.Object3D): THREE.Object3D[] {

@@ -10,14 +10,22 @@ const FLOWERS: NatureName[] = [
 ];
 const UP = new THREE.Vector3(0, 1, 0);
 
-/** Scatters swaying grass tufts and flowers on grassy land (no shadows). They go through `scatter`, so bridges can hide them. */
+/** Handle on the island's scattered plants. `setShare` draws only that share of the flowers (live, by instance count). */
+export interface Vegetation {
+  setShare(share: number): void;
+}
+
+/**
+ * Scatters swaying grass tufts and flowers on grassy land (no shadows). They go through `scatter`, so bridges can hide them.
+ * Flowers are always placed in full; the quality tier draws a share of them (their points are random, so a prefix is a fair sample).
+ */
 export function addVegetation(
   scene: THREE.Object3D,
   terrain: Terrain,
   assets: NatureAssets,
   scatter: Scatter,
   spec: ShapeSpec,
-) {
+): Vegetation {
   const rand = mulberry32(911);
   const { ponds, paddy } = spec.zones;
   const K = spec.scale;
@@ -51,7 +59,8 @@ export function addVegetation(
     names: NatureName[],
     sizeOf: (name: NatureName) => [number, number],
     wind: number,
-  ) => {
+  ): THREE.InstancedMesh[] => {
+    const before = group.children.length;
     const quat = new THREE.Quaternion();
     const scale = new THREE.Vector3();
     const pos = new THREE.Vector3();
@@ -66,10 +75,19 @@ export function addVegetation(
       scatter.add(name, new THREE.Matrix4().compose(pos, quat, scale), p.x, p.z);
     }
     scatter.flush(group, assets, () => ({ wind, jitter: rand }));
+    return group.children.slice(before) as THREE.InstancedMesh[];
   };
 
   // Tufts are kept short so they read as grass, not crystal shards.
   const grassSize = (name: NatureName): [number, number] => (name === 'grass' ? [0.2, 0.4] : [0.25, 0.45]);
   if (GRASS_ENABLED) build(sample(Math.round(3000 * density)), GRASS, grassSize, 0.25);
-  build(sample(Math.round(500 * density)), FLOWERS, () => [0.3, 0.5], 0.2);
+  const flowers = build(sample(Math.round(500 * density)), FLOWERS, () => [0.3, 0.5], 0.2)
+    .filter((m) => m.isInstancedMesh);
+  for (const m of flowers) m.userData.fullCount = m.count;
+
+  return {
+    setShare(share: number) {
+      for (const m of flowers) m.count = Math.round((m.userData.fullCount as number) * share);
+    },
+  };
 }

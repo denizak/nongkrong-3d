@@ -9,7 +9,8 @@ import { Scarecrow } from '../interact/Scarecrow';
 import type { Birds } from '../interact/Birds';
 import type { Interactable } from '../interact/Interactable';
 import { addProps, type Props } from './Props';
-import { addVegetation } from './Vegetation';
+import { addVegetation, type Vegetation } from './Vegetation';
+import { quality } from '../core/Quality';
 import { Torches } from './Torches';
 import type { NatureAssets } from './Assets';
 import type { IslandKind } from './Islands';
@@ -46,6 +47,8 @@ export interface IslandContent {
   campfire: Campfire | null;
   /** Scattered props and plants. Bridge corridors hide the ones on their landings while this island is live. */
   scatter: Scatter;
+  /** Plants on the island; the quality tier sets how many flowers are drawn. */
+  vegetation: Vegetation;
 }
 
 export interface ContentDeps {
@@ -80,7 +83,7 @@ export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics:
 
   const scatter = new Scatter();
   const props = addProps(root, terrain, physics, assets, scatter, spec);
-  addVegetation(root, terrain, assets, scatter, spec);
+  const vegetation = addVegetation(root, terrain, assets, scatter, spec);
   // The main island's village: plaza with huts, fire and benches, and the beach with the pier's landing.
   let campfire: Campfire | null = null;
   if (kind === 'main') {
@@ -89,7 +92,7 @@ export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics:
   }
   const torches = new Torches(root, terrain, physics, props, spec);
   const paddy = new PaddyField({
-    scene: root, terrain, zones: spec.zones, assets, player, inventory, spacing: spec.riceSpacing,
+    scene: root, terrain, zones: spec.zones, assets, player, inventory, spacing: spec.riceSpacing * quality.knobs.riceMul,
     avoid: [props.scarecrow.position, ...props.decoys],
   });
   const scarecrow = new Scarecrow({ group: props.scarecrow, camera, birds });
@@ -112,5 +115,6 @@ export function buildIslandContent(kind: IslandKind, deps: ContentDeps, physics:
     interactables: [...fruitTrees, paddy, scarecrow],
     campfire,
     scatter,
+    vegetation,
   };
 }

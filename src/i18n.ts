@@ -38,6 +38,18 @@ const en = {
   'help.robot': ' · K — new robot',
   'help.time': ' · T — +1 hour · R — rain',
   'help.mute': ' · M — mute',
+  'help.quality': ' · Q — graphics',
+
+  // Graphics quality
+  'quality.title': 'Graphics quality (Q)',
+  'quality.menu': 'Graphics',
+  'quality.high': 'High',
+  'quality.medium': 'Medium',
+  'quality.low': 'Low',
+  'quality.set': 'Graphics: {tier}',
+  'quality.lowered': 'Graphics lowered to {tier} for smoother play',
+  'quality.reload': 'Reload',
+  'quality.reloadHint': 'Reload the page to apply everything.',
   'touch.hint': 'Drag left to move · drag right to look',
 
   // Touch buttons
@@ -180,6 +192,18 @@ const id: Record<Key, string> = {
   'help.robot': ' · K — robot baru',
   'help.time': ' · T — +1 jam · R — hujan',
   'help.mute': ' · M — bisu',
+  'help.quality': ' · Q — grafis',
+
+  // Graphics quality
+  'quality.title': 'Kualitas grafis (Q)',
+  'quality.menu': 'Grafis',
+  'quality.high': 'Tinggi',
+  'quality.medium': 'Sedang',
+  'quality.low': 'Rendah',
+  'quality.set': 'Grafis: {tier}',
+  'quality.lowered': 'Kualitas grafis diturunkan ke {tier} agar lancar',
+  'quality.reload': 'Muat ulang',
+  'quality.reloadHint': 'Muat ulang halaman agar semuanya berlaku.',
   'touch.hint': 'Seret ke kiri untuk jalan · seret ke kanan untuk melihat',
 
   'touch.chat': 'Ngobrol',

@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { PointsNodeMaterial } from 'three/webgpu';
 import { attribute, uniform } from 'three/tsl';
 import type { Environment } from './Environment';
+import { quality } from '../core/Quality';
 import { WATER_LEVEL, ZONES, type Ground, type Orchard, type Zones } from './Terrain';
 import './daynight.css';
 
@@ -128,6 +129,7 @@ export class DayNight {
 
   private sunDir = new THREE.Vector3(0, 1, 0);
   private lightDir = new THREE.Vector3(0, 1, 0);
+  private moonDir = new THREE.Vector3();
   private center = new THREE.Vector3();
   private fog: THREE.Fog;
   private bg: THREE.Color;
@@ -223,7 +225,9 @@ export class DayNight {
 
     this.updateStars(night, rain);
     this.updateMoon(night, rain);
-    if (night > 0.01) this.updateFireflies(night);
+    const flies = Math.min(FIREFLY_COUNT, quality.knobs.fireflies);
+    this.fireflies.geometry.setDrawRange(0, flies);
+    if (night > 0.01) this.updateFireflies(night, flies);
     this.fireflies.visible = night > 0.01;
     this.env.waterNight.value = night;
     this.updatePill(rain);
@@ -275,7 +279,8 @@ export class DayNight {
     this.fog.color.copy(this.cFog);
     // Rain pulls the fog in.
     this.fog.near = lerp(70, 28, rain);
-    this.fog.far = lerp(260, 150, rain);
+    const far = quality.knobs.fogFar;
+    this.fog.far = lerp(far, far * (150 / 260), rain);
   }
 
   /** Gradient sky: horizon colour at the rim, top colour at the zenith. Same maths as the original dome. */
@@ -338,6 +343,7 @@ export class DayNight {
   private updateStars(night: number, rain: number) {
     const on = night > 0.01;
     this.stars.visible = on;
+    this.stars.geometry.setDrawRange(0, quality.knobs.stars);
     if (!on) return;
     this.starsU.value = night * (1 - 0.8 * rain);
     this.stars.position.copy(this.center);
@@ -345,7 +351,7 @@ export class DayNight {
 
   private updateMoon(night: number, rain: number) {
     // Moon sits opposite the sun, so it is up only when the sun is down.
-    const moonDir = this.sunDir.clone().negate();
+    const moonDir = this.moonDir.copy(this.sunDir).negate();
     const up = night > 0.01 && moonDir.y > 0.02;
     this.moon.visible = up;
     if (!up) return;
@@ -435,13 +441,13 @@ export class DayNight {
     }
   }
 
-  private updateFireflies(night: number) {
+  private updateFireflies(night: number, count: number) {
     const t = this.elapsed;
     const pos = this.flyPos;
     const col = this.flyCol;
     const base = this.flyBase;
     const flies = this.flies;
-    for (let i = 0; i < FIREFLY_COUNT; i++) {
+    for (let i = 0; i < count; i++) {
       const f = flies[i];
       const s = f.speed;
       const p = f.phase;

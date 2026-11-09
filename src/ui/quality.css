@@ -1,0 +1,41 @@
+/* Graphics quality pill (next to the sound and language pills) and its small menu. */
+#quality-toggle.quality-pill {
+  position: fixed; top: 56px; right: 96px; z-index: 40;
+  min-width: 36px; height: 26px; padding: 0 8px; box-sizing: border-box;
+  border: none; border-radius: 999px; cursor: pointer;
+  font: 14px/26px system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+#quality-toggle.quality-pill:focus-visible { outline: 2px solid #5a7a3a; }
+#quality-menu {
+  position: fixed; top: 88px; right: 60px; z-index: 41; min-width: 190px; box-sizing: border-box;
+  padding: 10px; border-radius: 14px; background: #fff9e8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 600 14px/1.3 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+}
+#quality-menu[hidden] { display: none; }
+#quality-menu .q-title { font-size: 12px; font-weight: 700; color: #5a7a3a; margin: 0 2px 6px; }
+#quality-menu button.q-opt {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  margin: 3px 0; padding: 8px 10px; border: none; border-radius: 10px; cursor: pointer;
+  font: inherit; color: inherit; background: rgba(255, 255, 255, 0.6);
+}
+#quality-menu button.q-opt:hover, #quality-menu button.q-opt:focus-visible { outline: 2px solid #5a7a3a; outline-offset: -2px; }
+#quality-menu button.q-opt.on { background: #d9efc9; }
+#quality-menu .q-hint { margin: 8px 2px 0; font-size: 12px; font-weight: 600; color: #a4402e; }
+#quality-menu .q-hint[hidden] { display: none; }
+#quality-menu .q-reload {
+  margin-top: 6px; padding: 6px 12px; border: none; border-radius: 999px; cursor: pointer;
+  font: inherit; font-weight: 700; color: #2f3b2a; background: #fffdf4; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+/* Perf panel (?perf): monospace, top-left under the pills, never takes clicks. */
+#perf-panel {
+  position: fixed; top: 210px; left: 16px; z-index: 30; pointer-events: none; margin: 0;
+  padding: 6px 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: #d9ffd0;
+  font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre;
+}
+/* Touch layout: the pill sits left of the mute pill, inside the safe area. */
+html.touch #quality-toggle.quality-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 106px);
+}
+html.touch #quality-menu { top: calc(env(safe-area-inset-top, 0px) + 50px); right: calc(env(safe-area-inset-right, 0px) + 60px); }
+html.touch #perf-panel { top: calc(env(safe-area-inset-top, 0px) + 150px); }

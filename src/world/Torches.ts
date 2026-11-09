@@ -3,6 +3,7 @@ import type { Physics } from '../core/Physics';
 import type { ShapeSpec, Terrain } from './Terrain';
 import type { Props } from './Props';
 import { MeshBaker } from './Bake';
+import { quality } from '../core/Quality';
 
 /** Pole height from the ground to the top of the fuel cup, in metres. */
 const POLE_H = 1.9;
@@ -24,6 +25,10 @@ const CUP = new THREE.Color('#4a3322');
 const FLAME_OUTER = new THREE.Color('#ff8a2a');
 const FLAME_INNER = new THREE.Color('#ffd36b');
 const LIGHT_COLOR = new THREE.Color('#ffb36b');
+/** Real point lights are a pool of this size. The quality tier decides how many of them are on. */
+const LIGHT_POOL = 12;
+/** How often the nearest torches are picked for the real lights (s). */
+const PICK_EVERY = 0.5;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smoothstep = (a: number, b: number, x: number) => {
@@ -38,9 +43,9 @@ function wobble(x: number): number {
 
 interface Torch {
   x: number;
+  y: number;
   z: number;
   phase: number;
-  light: THREE.PointLight;
   flame: THREE.Group;
   outer: THREE.MeshBasicMaterial;
   inner: THREE.MeshBasicMaterial;
@@ -58,6 +63,11 @@ export class Torches {
   readonly group = new THREE.Group();
   readonly torches: Torch[] = [];
 
+  /** Real lights, shared by the torches nearest the player. */
+  private pool: THREE.PointLight[] = [];
+  /** The torches the pool lights currently belong to, nearest first. */
+  private lit: Torch[] = [];
+  private pickTimer = 0;
   private t = 0;
 
   constructor(scene: THREE.Object3D, terrain: Terrain, physics: Physics, props: Props, spec: ShapeSpec) {
@@ -82,6 +92,13 @@ export class Torches {
     });
     const innerMat = new THREE.MeshBasicMaterial({ color: FLAME_INNER, transparent: true, depthWrite: false, opacity: 0 });
     const glowTex = makeGlowTexture();
+    for (let i = 0; i < LIGHT_POOL; i++) {
+      const light = new THREE.PointLight(LIGHT_COLOR, 0, LIGHT_DISTANCE, 2);
+      light.castShadow = false;
+      light.visible = false;
+      this.group.add(light);
+      this.pool.push(light);
+    }
 
     for (const [x, z] of this.spots(terrain, physics, props, spec)) {
       const y = terrain.heightAt(x, z);
@@ -115,18 +132,13 @@ export class Torches {
       glow.scale.set(2.6, 2.6, 1);
       root.add(glow);
 
-      const light = new THREE.PointLight(LIGHT_COLOR, 0, LIGHT_DISTANCE, 2);
-      light.position.y = LIGHT_Y - y;
-      light.castShadow = false;
-      root.add(light);
-
       this.group.add(root);
 
       // Collider: a thin cylinder covering the pole, so the player bumps into it.
       physics.addStatic(ColliderDesc.cylinder(POLE_H / 2, COLLIDER_R), x, y + POLE_H / 2, z);
 
       this.torches.push({
-        x, z, phase: Math.random() * Math.PI * 2, light, flame,
+        x, y, z, phase: Math.random() * Math.PI * 2, flame,
         outer: outerMat, inner: innerMat, glow: glowMat, flicker: 1,
       });
     }
@@ -141,22 +153,29 @@ export class Torches {
     return this.torches.length;
   }
 
-  /** Per frame. `night` is DayNight.nightFactor, 0 by day and 1 at deep night. */
-  update(dt: number, night: number) {
+  /**
+   * Per frame. `night` is DayNight.nightFactor, 0 by day and 1 at deep night. `focus` is the player's local
+   * position: the nearest torches get the real point lights (quality.knobs.torchLights of them).
+   */
+  update(dt: number, night: number, focus: THREE.Vector3) {
     this.t += dt;
     const vis = smoothstep(SHOW_FROM, SHOW_TO, night);
     this.group.visible = vis > 0.001;
     if (!this.group.visible) {
-      for (const f of this.torches) f.light.intensity = 0;
+      for (const l of this.pool) l.intensity = 0;
       return;
+    }
+    const budget = Math.min(LIGHT_POOL, quality.knobs.torchLights, this.torches.length);
+    this.pickTimer -= dt;
+    if (this.pickTimer <= 0 || this.lit.length !== budget) {
+      this.pickTimer = PICK_EVERY;
+      this.assignLights(focus, budget);
     }
     const k = Math.min(1, dt * 10);
     for (const f of this.torches) {
       const n = wobble(this.t * 7 + f.phase);
       const target = 0.975 + 0.125 * n;
       f.flicker += (target - f.flicker) * k;
-      // Light: scaled by night and smoothed flicker.
-      f.light.intensity = LIGHT_BASE * night * f.flicker;
 
       // Flame: height breathes between 0.85 and 1.15, with a small sideways sway.
       const breathe = 1 + 0.15 * wobble(this.t * 9 + f.phase * 1.3);
@@ -168,6 +187,20 @@ export class Torches {
       f.inner.opacity = 1 * vis;
       f.glow.opacity = (0.75 + 0.15 * n) * vis;
     }
+    // Pool lights follow their torch's flicker. Unused pool lights are switched off (not just dimmed).
+    for (let i = 0; i < LIGHT_POOL; i++) {
+      const light = this.pool[i];
+      const f = i < budget ? this.lit[i] : undefined;
+      light.visible = f !== undefined;
+      light.intensity = f ? LIGHT_BASE * night * f.flicker : 0;
+    }
+  }
+
+  /** Puts the pool lights on the `budget` torches nearest to `focus` (local coordinates). */
+  private assignLights(focus: THREE.Vector3, budget: number) {
+    const d2 = (f: Torch) => (f.x - focus.x) ** 2 + (f.z - focus.z) ** 2;
+    this.lit = this.torches.slice().sort((a, b) => d2(a) - d2(b)).slice(0, budget);
+    this.lit.forEach((f, i) => this.pool[i].position.set(f.x, f.y + LIGHT_Y, f.z));
   }
 
   /** Finds the spots (spec.torchSpots, or the generic ring, shore, orchard and scarecrow set), then nudges each toward spawn until valid. */

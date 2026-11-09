@@ -3,6 +3,7 @@ import { CharacterModel, type Pose } from '../player/CharacterModel';
 import { encodeLook, type Look } from '../player/Look';
 import { centreOf, displayName, inProxyWindow } from '../world/Islands';
 import { SpeechBubble, placeOn } from '../ui/SpeechBubble';
+import { addBlobShadow } from '../world/BlobShadow';
 import { STALE_MS, type Net, type RemotePeer, type Snapshot } from './Net';
 import './net.css';
 
@@ -230,6 +231,7 @@ export class RemotePlayers {
       placeholder = buildPlaceholder(p.look);
       anchor.add(placeholder.group);
     }
+    addBlobShadow(anchor);
     this.scene.add(anchor);
 
     const nameTag = document.createElement('div');

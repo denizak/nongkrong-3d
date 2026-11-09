@@ -3,6 +3,7 @@ import { MeshBasicNodeMaterial } from 'three/webgpu';
 import { clamp, float, max, mix, positionWorld, sin, smoothstep, step, texture, time, uniform, vec2, vec3 } from 'three/tsl';
 import type { UniformNode } from 'three/webgpu';
 import { WATER_LEVEL } from './Terrain';
+import { quality } from '../core/Quality';
 
 const SKY_TOP = new THREE.Color('#4fb3ea');
 const SKY_HORIZON = new THREE.Color('#c9eefc');
@@ -30,7 +31,8 @@ export class Environment {
     scene: THREE.Scene,
     private heightAtWorld: (x: number, z: number) => number,
   ) {
-    scene.fog = new THREE.Fog(FOG, 70, 260);
+    const K = quality.knobs;
+    scene.fog = new THREE.Fog(FOG, 70, K.fogFar);
     scene.background = FOG;
 
     // Gradient sky dome via vertex colors (works on WebGPU and WebGL).
@@ -55,16 +57,10 @@ export class Environment {
     scene.add(this.hemi);
 
     this.sun = new THREE.DirectionalLight('#fff0d4', 2.6);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
-    const s = this.sun.shadow.camera;
-    s.left = s.bottom = -28;
-    s.right = s.top = 28;
-    s.near = 1;
-    s.far = 150;
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.normalBias = 0.03;
     scene.add(this.sun, this.sun.target);
+    this.applyShadows();
 
     // Until the first depth map is ready, render water as deep rather than as a solid foam sheet.
     this.depth = new THREE.DataTexture(new Uint8Array(DEPTH_RES * DEPTH_RES).fill(255), DEPTH_RES, DEPTH_RES, THREE.RedFormat, THREE.UnsignedByteType);
@@ -75,9 +71,29 @@ export class Environment {
 
     // One big water plane: ocean around the islands and the pond basins.
     const waterGeo = new THREE.PlaneGeometry(900, 900, 1, 1).rotateX(-Math.PI / 2);
-    this.water = new THREE.Mesh(waterGeo, toonWater(this.depth, this.waterNight));
+    this.water = new THREE.Mesh(waterGeo, toonWater(this.depth, this.waterNight, K.waterLite));
     this.water.position.y = WATER_LEVEL;
     scene.add(this.water);
+  }
+
+  /** Sun shadow on or off, map size and frustum from the quality knobs. Safe to call again on a tier change. */
+  applyShadows() {
+    const K = quality.knobs;
+    const on = K.shadowSize > 0;
+    this.sun.castShadow = on;
+    if (!on) return;
+    const map = this.sun.shadow;
+    if (map.mapSize.x !== K.shadowSize) {
+      map.mapSize.set(K.shadowSize, K.shadowSize);
+      map.map?.dispose();
+      map.map = null;
+    }
+    const s = map.camera;
+    s.left = s.bottom = -K.shadowHalf;
+    s.right = s.top = K.shadowHalf;
+    s.near = 1;
+    s.far = 150;
+    s.updateProjectionMatrix();
   }
 
   /** Queue a water-depth rebuild, replacing any unfinished work for the previous island. */
@@ -127,7 +143,7 @@ const rgb = (hex: string) => {
  * Toon water: depth-banded colour, a wobbling white foam line at the shore and light streaks.
  * `depthTex` covers WINDOW metres around the live island's local origin. Points outside it count as deep.
  */
-function toonWater(depthTex: THREE.DataTexture, night: UniformNode<'float', number>) {
+function toonWater(depthTex: THREE.DataTexture, night: UniformNode<'float', number>, lite: boolean) {
   const depthSampler = texture(depthTex);
   const p = positionWorld;
   const t = time;
@@ -165,7 +181,10 @@ function toonWater(depthTex: THREE.DataTexture, night: UniformNode<'float', numb
   const ripple = sin(p.x.mul(0.9).add(p.z.mul(0.45)).add(sin(p.z.mul(0.6).add(t.mul(0.5))).mul(1.6)).add(t.mul(0.9)));
   const streak = smoothstep(float(0.9), float(0.96), ripple);
   // Break the streaks into scattered glints with a slow second wave.
-  const patch = smoothstep(float(0.55), float(0.85), sin(p.x.mul(0.31).add(p.z.mul(0.13)).add(t.mul(0.2))).mul(0.5).add(0.5));
+  // On low the second wave is dropped: every glint shows, which costs one sine less per pixel.
+  const patch = lite
+    ? float(1)
+    : smoothstep(float(0.55), float(0.85), sin(p.x.mul(0.31).add(p.z.mul(0.13)).add(t.mul(0.2))).mul(0.5).add(0.5));
   // Night removes the streaks completely.
   const light = streak.mul(patch).mul(0.12).mul(float(1).sub(night));
 

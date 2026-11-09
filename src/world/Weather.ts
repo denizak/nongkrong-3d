@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { WATER_LEVEL, type Ground } from './Terrain';
 import { isTyping } from './DayNight';
+import { quality } from '../core/Quality';
 
 const STREAKS = 1500;
 /** Side of the square box of rain around the camera, in metres. */
@@ -115,8 +116,10 @@ export class Weather {
       return;
     }
     this.streaks.visible = true;
+    // Fewer drops on lower tiers: the first `count` instances are drawn.
+    this.streaks.count = Math.min(STREAKS, quality.knobs.rain);
     (this.streaks.material as THREE.MeshBasicMaterial).opacity = 0.25 * r;
-    this.moveStreaks(dt, focus, r);
+    this.moveStreaks(dt, focus, r, this.streaks.count);
     this.updateRipples(dt, focus, r);
   }
 
@@ -137,7 +140,7 @@ export class Weather {
   }
 
   /** Recycles drops inside a box around the camera. Only the translation column changes per frame. */
-  private moveStreaks(dt: number, focus: THREE.Vector3, r: number) {
+  private moveStreaks(dt: number, focus: THREE.Vector3, r: number, count: number) {
     const arr = this.streaks.instanceMatrix.array as Float32Array;
     const off = this.streakOff;
     const cx = focus.x;
@@ -147,7 +150,7 @@ export class Weather {
     const dz = WIND.z * dt;
     // Heavier rain falls a little faster.
     const fall = FALL_SPEED * dt * (0.8 + 0.4 * r);
-    for (let i = 0; i < STREAKS; i++) {
+    for (let i = 0; i < count; i++) {
       const j = i * 3;
       const ox = off[j] + dx;
       let oy = off[j + 1] - fall;

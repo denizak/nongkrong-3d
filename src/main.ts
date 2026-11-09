@@ -39,6 +39,10 @@ import { NetDebug } from './net/NetDebug';
 import { Minimap } from './ui/Minimap';
 import { FullMap } from './ui/FullMap';
 import { IslandTitle } from './ui/IslandTitle';
+import { quality, initQuality, isTouchDevice, lowerTier, FrameMonitor, type Knobs, type Source, type Tier } from './core/Quality';
+import { QualityMenu } from './ui/QualityMenu';
+import { PerfPanel } from './ui/PerfPanel';
+import { addBlobShadow, applyBlobShadows } from './world/BlobShadow';
 
 const NO_MOVE = { x: 0, y: 0 };
 /** Beach is the sand band: beyond this share of the coast radius (and low ground). */
@@ -74,18 +78,20 @@ async function boot() {
   const container = document.getElementById('app')!;
   const backendLabel = document.getElementById('backend')!;
 
-  // WebGPURenderer uses WebGPU when available and falls back to WebGL2.
-  // Add ?webgl to the URL to force the WebGL path for testing.
-  // Pixel ratio is capped at 1.5 for speed. Add ?hq to allow up to 2.
+  // Quality tier first: it decides antialiasing, pixel ratio and shadows at renderer creation.
+  // ?q=high|medium|low overrides the saved and automatic choice. See src/core/Quality.ts.
   const params = new URLSearchParams(location.search);
-  const forceWebGL = params.has('webgl');
-  const maxPixelRatio = params.has('hq') ? 2 : 1.5;
+  initQuality(params);
+  const touchDevice = isTouchDevice();
+  // WebGPURenderer uses WebGPU when available and falls back to WebGL2. ?webgl forces WebGL2 (testing and drivers).
+  // Low on a touch device also starts on WebGL2, since phone WebGPU drivers are uneven; ?webgpu keeps WebGPU.
+  const forceWebGL = params.has('webgl') || (quality.tier === 'low' && touchDevice && !params.has('webgpu'));
   const loading = new Loading();
   loading.setProgress(0.05, t('loading.renderer'));
-  const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
+  const renderer = new THREE.WebGPURenderer({ antialias: quality.knobs.antialias, forceWebGL });
+  renderer.setPixelRatio(quality.pixelRatio(window.devicePixelRatio));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = quality.knobs.shadowSize > 0;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -98,6 +104,8 @@ async function boot() {
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+  /** Frame-rate watch for auto-downgrade. Only measures once the game has started. */
+  const frames = new FrameMonitor();
 
   // Rapier loads in its own chunk, in parallel with the models.
   const physicsReady = Physics.create().then((p) => {
@@ -135,6 +143,8 @@ async function boot() {
   bridges.addLayout(pierLayout(terrains.main));
   const player = new Player(ground, physics, model, (x, z) => bridges.onBridge(x, z));
   scene.add(player.object);
+  // Soft disc under the player: the stand-in for a shadow on the low tier.
+  addBlobShadow(player.object);
 
   const rig = new CameraRig(camera, physics);
   const input = new Input(renderer.domElement);
@@ -152,6 +162,8 @@ async function boot() {
       terrains, physics, assets, scene, player, inventory, camera, birds,
     }, physics);
   }
+  // Flowers are placed in full; the tier draws its share.
+  for (const kind of ['normal', 'main'] as const) contents[kind].vegetation.setShare(quality.knobs.flowerShare);
   loading.setProgress(0.9, t('loading.almost'));
 
   const interactions = new InteractionSystem(input, player, { pickups });
@@ -184,6 +196,7 @@ async function boot() {
     normal: { root: contents.normal.root, terrain: contents.normal.terrain.mesh, torches: contents.normal.torches.group },
     main: { root: contents.main.root, terrain: contents.main.terrain.mesh, torches: contents.main.torches.group },
   });
+  proxies.setDecimate(quality.knobs.decimateProxies);
   new IslandPill(archipelago);
   const netPill = new NetPill(net, archipelago);
   new NetDebug(net);
@@ -193,6 +206,39 @@ async function boot() {
   const islandTitle = new IslandTitle();
   // Touch joystick, camera drag and buttons, with the map button. Does nothing on non-touch devices.
   const touch = new TouchControls({ input, fishpedia, chat, map: fullMap });
+
+  /** Build-time knobs as the scene was built. A change to any of these needs a reload to show in full. */
+  const buildKey = (k: Knobs) => `${k.antialias}|${k.riceMul}|${k.waterLite}`;
+  const builtKey = buildKey(quality.knobs);
+  /**
+   * Applies a quality tier to the live scene and saves it. Returns true when a build-time knob differs from
+   * what was built, so the page needs a reload for the full effect.
+   */
+  const applyTier = (tier: Tier, source: Source): boolean => {
+    quality.set(tier, source, true);
+    const K = quality.knobs;
+    frames.pause(2);
+    renderer.setPixelRatio(quality.pixelRatio(window.devicePixelRatio));
+    renderer.shadowMap.enabled = K.shadowSize > 0;
+    env.applyShadows();
+    contents.normal.vegetation.setShare(K.flowerShare);
+    contents.main.vegetation.setShare(K.flowerShare);
+    proxies.setDecimate(K.decimateProxies);
+    proxies.update(archipelago.id);
+    applyBlobShadows();
+    return buildKey(K) !== builtKey;
+  };
+  const menu = new QualityMenu((tier) => applyTier(tier, 'manual'), (msg) => inventory.toast(msg));
+  const announceLowered = (tier: Tier) => inventory.toast(t('quality.lowered', { tier: t(`quality.${tier}`) }));
+  const perf = params.has('perf')
+    ? new PerfPanel({
+      renderer,
+      scene,
+      backend: isWebGPU ? 'WebGPU' : 'WebGL2',
+      visibleProxies: () => proxies.visibleCount,
+      shadowText: () => (env.sun.castShadow ? `${env.sun.shadow.mapSize.x}px` : 'off'),
+    })
+    : null;
 
   /** The live island's content. Set by enterIsland; the main island until the first switch. */
   let live: IslandContent = contents.main;
@@ -220,6 +266,8 @@ async function boot() {
     id: number,
     opts: { shift?: { dx: number; dz: number }; x?: number; z?: number; heading?: number; capture?: boolean } = {},
   ) => {
+    // Island changes cost frames (new colliders and props): keep them out of the auto-downgrade window.
+    frames.pause(0.5);
     const def = islandById(id)!;
     if (opts.capture ?? booted) islands.set(archipelago.id, captureLive());
 
@@ -310,7 +358,7 @@ async function boot() {
 
   // FPS meter: dev builds or ?stats only, and never in touch mode unless ?stats is set.
   const touchMode = document.documentElement.classList.contains('touch');
-  const showStats = params.has('stats') || (import.meta.env.DEV && !touchMode);
+  const showStats = params.has('stats') || (import.meta.env.DEV && !touchMode && quality.tier !== 'low');
   const stats = showStats ? new (await import('stats.js')).default() : null;
   if (stats) {
     stats.dom.style.left = 'auto';
@@ -335,11 +383,24 @@ async function boot() {
   const timer = new THREE.Timer();
   renderer.setAnimationLoop((now) => {
     timer.update(now);
-    const dt = Math.min(timer.getDelta(), 0.1);
+    const raw = timer.getDelta();
+    const dt = Math.min(raw, 0.1);
     const t = timer.getElapsed();
+    // A hidden tab draws nothing and measures nothing.
+    if (document.hidden) {
+      frames.pause(1);
+      return;
+    }
     stats?.begin();
 
     if (started) {
+      // Auto-downgrade: three slow 3 s windows in a row step the tier down one notch. Never up.
+      if (frames.tick(raw, false) && quality.tier !== 'low') {
+        const next = lowerTier(quality.tier);
+        menu.setNeedsReload(applyTier(next, 'auto'));
+        announceLowered(next);
+      }
+
       if (input.consumeSit()) player.togglePose('sit');
       if (input.consumeLie()) player.togglePose('lie');
       // Fishing holds the player still until the line is reeled in.
@@ -383,13 +444,14 @@ async function boot() {
     weather.update(dt, player.position, daynight.hoursThisFrame);
     sfx.setWorld(weather.rainAmount, daynight.nightFactor);
     // Both kinds keep their torches ticking, so the proxies of the other kind stay in step.
-    contents.normal.torches.update(dt, daynight.nightFactor);
-    contents.main.torches.update(dt, daynight.nightFactor);
+    contents.normal.torches.update(dt, daynight.nightFactor, player.position);
+    contents.main.torches.update(dt, daynight.nightFactor, player.position);
     contents.main.campfire?.update(dt, daynight.nightFactor);
     bridges.update(daynight.nightFactor);
     proxies.sync();
 
     renderer.render(scene, camera);
+    perf?.frame(raw);
     stats?.end();
   });
 }
