@@ -230,6 +230,26 @@ async function boot() {
   };
   const menu = new QualityMenu((tier) => applyTier(tier, 'manual'), (msg) => inventory.toast(msg));
   const announceLowered = (tier: Tier) => inventory.toast(t('quality.lowered', { tier: t(`quality.${tier}`) }));
+  // ?perf only: count the draws of nested render() calls. The shadow maps render the scene through renderer.render()
+  // from inside the top-level call, so the nested draws are the shadow pass. Draws are read from info.render.drawCalls.
+  const passes = { shadowDraws: 0 };
+  if (params.has('perf')) {
+    const baseRender = renderer.render.bind(renderer);
+    let depth = 0;
+    renderer.render = ((scene: THREE.Object3D, camera: THREE.Camera) => {
+      if (depth === 0) {
+        depth++;
+        try { baseRender(scene, camera); } finally { depth--; }
+        return;
+      }
+      const before = renderer.info.render.drawCalls;
+      depth++;
+      try { baseRender(scene, camera); } finally {
+        depth--;
+        passes.shadowDraws += renderer.info.render.drawCalls - before;
+      }
+    }) as typeof renderer.render;
+  }
   const perf = params.has('perf')
     ? new PerfPanel({
       renderer,
@@ -237,6 +257,7 @@ async function boot() {
       backend: isWebGPU ? 'WebGPU' : 'WebGL2',
       visibleProxies: () => proxies.visibleCount,
       shadowText: () => (env.sun.castShadow ? `${env.sun.shadow.mapSize.x}px` : 'off'),
+      shadowDraws: () => passes.shadowDraws,
     })
     : null;
 
@@ -450,6 +471,7 @@ async function boot() {
     bridges.update(daynight.nightFactor);
     proxies.sync();
 
+    passes.shadowDraws = 0;
     renderer.render(scene, camera);
     perf?.frame(raw);
     stats?.end();

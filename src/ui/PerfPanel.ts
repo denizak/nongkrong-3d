@@ -8,6 +8,16 @@ export interface PerfSources {
   backend: string;
   visibleProxies: () => number;
   shadowText: () => string;
+  /** Draw calls issued by nested render() calls (the shadow maps) during the current frame. */
+  shadowDraws: () => number;
+}
+
+/** Per-frame renderer counters, also exported as window.nongkrongPerf. */
+export interface PerfCounters {
+  /** Draw calls this frame, shadow pass included. */
+  calls: number;
+  /** Triangles this frame, shadow pass included. */
+  triangles: number;
 }
 
 /** Frames kept for the 1% low (about 5 s at 60 fps). */
@@ -25,14 +35,27 @@ export class PerfPanel {
   private head = 0;
   private filled = 0;
   private sinceText = 0;
+  private counters: PerfCounters = { calls: 0, triangles: 0 };
+  private passes = 0;
+  private shadowCalls = 0;
 
   constructor(private src: PerfSources) {
     this.el.id = 'perf-panel';
     document.body.append(this.el);
   }
 
-  /** Call once per frame with the raw frame time in seconds. */
+  /**
+   * Call once per frame, after renderer.render(), with the raw frame time in seconds.
+   * info.render.drawCalls / triangles / frameCalls are reset by the animation loop at the start of each frame
+   * (info.autoReset), so after render() they hold this frame's totals. info.render.calls is cumulative and is not used.
+   */
   frame(raw: number) {
+    const info = this.src.renderer.info.render;
+    this.counters.calls = info.drawCalls;
+    this.counters.triangles = info.triangles;
+    this.passes = info.frameCalls;
+    this.shadowCalls = this.src.shadowDraws();
+    (window as Window & { nongkrongPerf?: PerfCounters }).nongkrongPerf = this.counters;
     this.ring[this.head] = raw;
     this.head = (this.head + 1) % RING;
     if (this.filled < RING) this.filled++;
@@ -52,7 +75,7 @@ export class PerfPanel {
     const sorted = Array.from(this.ring.subarray(0, n)).sort((a, b) => b - a);
     const p99 = sorted[Math.min(n - 1, Math.floor(n * 0.01))] ?? 0;
 
-    const info = this.src.renderer.info.render;
+    const { calls, triangles } = this.counters;
     const k = quality.knobs;
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? '?';
     return [
@@ -62,7 +85,8 @@ export class PerfPanel {
       `tier ${quality.tier} (${quality.source})  antialias ${k.antialias ? 'on' : 'off'}`,
       `dpr ${window.devicePixelRatio.toFixed(2)}  pixel ratio ${this.src.renderer.getPixelRatio().toFixed(2)}`,
       `drawing ${this.src.renderer.domElement.width}x${this.src.renderer.domElement.height}`,
-      `draw calls ${info.calls}  triangles ${formatCount(info.triangles)}`,
+      `draw calls ${calls}  triangles ${formatCount(triangles)}`,
+      `  main ${calls - this.shadowCalls}  shadow ${this.shadowCalls}  render passes ${this.passes}`,
       `shadows ${this.src.shadowText()}  point lights ${this.countLights()}`,
       `proxies ${this.src.visibleProxies()}  rain ${k.rain}  fireflies ${k.fireflies}`,
       `memory ${mem} GB  cores ${navigator.hardwareConcurrency}`,
