@@ -134,7 +134,8 @@ export function initQuality(params: URLSearchParams): void {
     quality.set(saved, 'saved', false);
     return;
   }
-  quality.set(autoTier(), 'auto', true);
+  // The guess is not saved: a later change to the rules still applies. Auto-downgrade and manual choices save.
+  quality.set(autoTier(), 'auto', false);
 }
 
 function readSaved(): Tier | null {
@@ -160,23 +161,25 @@ export function isTouchDevice(): boolean {
 }
 
 /**
- * First-load guess. Any of these starts at low: a coarse pointer, 4 GB of memory or less, a touch device with
- * 6 cores or fewer, or a mobile user agent. Other touch devices and integrated GPUs start at medium. The rest
- * start at high. The auto-downgrade in main.ts can still step the tier down later.
+ * First-load guess (not saved). Touch, coarse-pointer or mobile-UA devices never start at high: they start at
+ * low only when clearly weak (4 GB of memory or less, or 4 cores or fewer), and at medium otherwise. Non-touch
+ * devices start at high, or at medium on an integrated GPU. The auto-downgrade in main.ts can still step down.
  */
 export function autoTier(): Tier {
   const nav = navigator as Navigator & { deviceMemory?: number };
   const coarse = matchMedia('(pointer: coarse)').matches;
-  const touch = isTouchDevice();
   const mobileUA = /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent);
-  const lowMemory = nav.deviceMemory !== undefined && nav.deviceMemory <= 4;
-  const fewCores = touch && navigator.hardwareConcurrency <= 6;
-  if (coarse || lowMemory || fewCores || mobileUA) return 'low';
-  if (touch || integratedGpu()) return 'medium';
-  return 'high';
+  if (isTouchDevice() || coarse || mobileUA) {
+    const weak = (nav.deviceMemory !== undefined && nav.deviceMemory <= 3) || navigator.hardwareConcurrency <= 4;
+    return weak ? 'low' : 'medium';
+  }
+  return integratedGpu() ? 'medium' : 'high';
 }
 
-/** True when the WebGL renderer string names an integrated GPU (Intel, Mali, Adreno, PowerVR). */
+/**
+ * True when the WebGL renderer string names an integrated GPU (Intel, Mali, Adreno, PowerVR, Vivante). Apple and
+ * discrete GPUs (NVIDIA, AMD/Radeon) are never counted as integrated, even if the name also mentions Intel.
+ */
 function integratedGpu(): boolean {
   try {
     const canvas = document.createElement('canvas');
@@ -185,7 +188,7 @@ function integratedGpu(): boolean {
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const name = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
     gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return /Intel|Mali|Adreno|PowerVR|Vivante/i.test(name);
+    return /Intel|Mali|Adreno|PowerVR|Vivante/i.test(name) && !/Apple|NVIDIA|GeForce|AMD|Radeon/i.test(name);
   } catch {
     return false;
   }

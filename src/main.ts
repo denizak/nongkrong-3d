@@ -95,7 +95,16 @@ async function boot() {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  await renderer.init();
+  try {
+    await renderer.init();
+  } catch (err) {
+    // One-time hint only: no automatic reload. The failure screen shows the message.
+    if (touchDevice && !forceWebGL) {
+      console.warn('[renderer] WebGPU init failed on a touch device', err);
+      throw new Error(`${String((err as Error)?.message ?? err)} (${t('webgl.hint')})`);
+    }
+    throw err;
+  }
   container.appendChild(renderer.domElement);
   loading.setProgress(0.1, t('loading.physics'));
 
@@ -401,6 +410,12 @@ async function boot() {
     void net.start();
   });
 
+  // One-time WebGPU check on touch devices: the first 2 s of play under 15 fps shows a ?webgl hint. No reload.
+  let probeTime = 0;
+  let probeFrames = 0;
+  let probeDone = !touchDevice || !isWebGPU;
+  const webglHint = t('webgl.hint');
+
   const timer = new THREE.Timer();
   renderer.setAnimationLoop((now) => {
     timer.update(now);
@@ -415,6 +430,18 @@ async function boot() {
     stats?.begin();
 
     if (started) {
+      if (!probeDone && raw <= 0.2) {
+        probeTime += raw;
+        probeFrames++;
+        if (probeTime >= 2) {
+          probeDone = true;
+          const fps = probeFrames / probeTime;
+          if (fps < 15) {
+            console.warn(`[renderer] ${fps.toFixed(1)} fps in the first 2 s on WebGPU (touch device)`);
+            inventory.toast(webglHint);
+          }
+        }
+      }
       // Auto-downgrade: three slow 3 s windows in a row step the tier down one notch. Never up.
       if (frames.tick(raw, false) && quality.tier !== 'low') {
         const next = lowerTier(quality.tier);
