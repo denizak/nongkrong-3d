@@ -21,7 +21,7 @@ A cozy, low-poly 3D island game that runs in the browser. You play a small robot
 | **Time and weather** | 20-minute day/night cycle with dawn, golden hour, dusk and a moonlit night. Stars, fireflies, obor (tiki torches), random rain. **T** advances one hour, **R** toggles rain |
 | **Map** | Minimap in the corner. The full map (**P**) shows islands, names, visited state, bridges and online players |
 | **Multiplayer** | P2P (WebRTC). See other players' robots, names, poses and chat bubbles (**Enter** to chat, `/nama` to rename) |
-| **Audio** | Original generated ukulele-style music, waves, breeze, birds, crickets, rain and thunder. Footsteps on grass, sand and wood. Steel-drum catch jingles. **M** mutes |
+| **Audio** | Ambient sounds (waves, breeze, birds, crickets, rain and thunder), footsteps on grass, sand and wood, and effects including steel-drum catch jingles. No background music. **M** mutes |
 | **Saving** | Position, island, robot, name, inventory, Fishpedia, per-island tree and rice state, time of day. Saved automatically in localStorage |
 
 ---
@@ -32,7 +32,7 @@ A cozy, low-poly 3D island game that runs in the browser. You play a small robot
 - **TypeScript + Vite 8.** The entry bundle is about 130 KB. three.js and Rapier are split into their own chunks and load in parallel.
 - **Rapier** (`@dimforge/rapier3d-compat`): kinematic character controller, terrain trimesh, prop and bridge colliders. Loaded dynamically.
 - **Trystero** (Nostr signalling, WebRTC data channels): P2P multiplayer, loaded after the game starts. Discovery uses the self-hosted Nostr relay and public fallback relays.
-- **Web Audio API**: all music and ambience are synthesized in code, alongside a few CC0 samples.
+- **Web Audio API**: all ambience and synth effects are generated in code, alongside a few CC0 samples.
 - **simplex-noise**: terrain generation.
 
 ## Architecture highlights

@@ -2,7 +2,6 @@ import { t } from '../i18n';
 import * as THREE from 'three/webgpu';
 import type { Player } from '../player/Player';
 import { Synth, SYNTH_NAMES, type SynthName } from './Synth';
-import { Music } from './Music';
 import { Ambience, type WorldState } from './Ambience';
 import './audio.css';
 
@@ -62,14 +61,12 @@ function makeNoise(ctx: AudioContext, seconds: number): AudioBuffer {
 export class AudioManager {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  private musicBus: GainNode | null = null;
   private ambienceBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
   /** Remote voice chat goes through this bus (see Voice.ts). It sits between the voices and master. */
   voiceBus: GainNode | null = null;
   private unlockListeners: (() => void)[] = [];
   private synth: Synth | null = null;
-  private music: Music | null = null;
   private ambience: Ambience | null = null;
   private noise: AudioBuffer | null = null;
   private buffers = new Map<string, AudioBuffer>();
@@ -202,8 +199,6 @@ export class AudioManager {
     camera.getWorldPosition(this.listenerPos);
 
     if (!this.ctx) return;
-    // Music is 30% quieter at night.
-    this.musicBus?.gain.setTargetAtTime(0.35 * (1 - 0.3 * this.world.night), this.ctx.currentTime, 0.8);
     this.ambience?.update(dt, player.position, this.world, this.surfaceAt(player.position.x, player.position.z) === 'bridge', this.coastR);
     this.updateFootsteps(dt, player);
   }
@@ -234,7 +229,7 @@ export class AudioManager {
     }
   }
 
-  /** Creates the context on a user gesture and starts the music and ambience. */
+  /** Creates the context on a user gesture and starts the ambience. */
   private unlock() {
     if (this.ctx) {
       if (this.ctx.state === 'suspended') void this.ctx.resume();
@@ -248,9 +243,6 @@ export class AudioManager {
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 1;
     this.master.connect(ctx.destination);
-    this.musicBus = ctx.createGain();
-    this.musicBus.gain.value = 0.35;
-    this.musicBus.connect(this.master);
     this.ambienceBus = ctx.createGain();
     this.ambienceBus.gain.value = 0.5;
     this.ambienceBus.connect(this.master);
@@ -263,8 +255,6 @@ export class AudioManager {
 
     this.noise = makeNoise(ctx, 2);
     this.synth = new Synth(ctx, this.noise);
-    this.music = new Music(ctx, this.noise, this.musicBus);
-    this.music.start();
     this.ambience = new Ambience(ctx, this.noise, this.ambienceBus, this, this.synth);
     this.ambience.start();
     if (ctx.state === 'suspended') void ctx.resume();
