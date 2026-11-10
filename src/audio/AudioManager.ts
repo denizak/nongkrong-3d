@@ -63,7 +63,7 @@ export class AudioManager {
   private master: GainNode | null = null;
   private ambienceBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
-  /** Remote voice chat goes through this bus (see Voice.ts). It sits between the voices and master. */
+  /** Remote voice chat goes through this bus (see Voice.ts). It goes straight to the destination, not through master, so M does not mute it. */
   voiceBus: GainNode | null = null;
   private unlockListeners: (() => void)[] = [];
   private synth: Synth | null = null;
@@ -251,7 +251,8 @@ export class AudioManager {
     this.sfxBus.connect(this.master);
     this.voiceBus = ctx.createGain();
     this.voiceBus.gain.value = 1;
-    this.voiceBus.connect(this.master);
+    // Voice bypasses master so the M / pill mute (ambience and effects only) never silences voice chat.
+    this.voiceBus.connect(ctx.destination);
 
     this.noise = makeNoise(ctx, 2);
     this.synth = new Synth(ctx, this.noise);

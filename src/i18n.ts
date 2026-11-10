@@ -37,7 +37,7 @@ const en = {
   'help.chat': ' · Enter — chat',
   'help.robot': ' · K — new robot',
   'help.time': ' · T — +1 hour · R — rain',
-  'help.mute': ' · M — mute',
+  'help.mute': ' · M — mute ambient sounds',
   'help.quality': ' · Q — graphics',
 
   // Graphics quality
@@ -76,7 +76,7 @@ const en = {
   'net.zero': '👥 0 online',
   'net.failed': '👥 ⚠️ {n} player(s) found but could not connect (network)',
   'net.failedHelp': "Your network or the other player's blocks direct (P2P) connections. Try another network or turn off your VPN.",
-  'audio.title': 'Sound on or off (M)',
+  'audio.title': 'Mute ambient sounds (voice chat stays on)',
   'lang.title': 'Switch language',
 
   // Voice chat
@@ -208,7 +208,7 @@ const id: Record<Key, string> = {
   'help.chat': ' · Enter — ngobrol',
   'help.robot': ' · K — robot baru',
   'help.time': ' · T — +1 jam · R — hujan',
-  'help.mute': ' · M — bisu',
+  'help.mute': ' · M — bisukan suara lingkungan',
   'help.quality': ' · Q — grafis',
 
   // Graphics quality
@@ -245,7 +245,7 @@ const id: Record<Key, string> = {
   'net.zero': '👥 0 online',
   'net.failed': '👥 ⚠️ {n} pemain terdeteksi tapi gagal tersambung (jaringan)',
   'net.failedHelp': 'Jaringanmu atau jaringan pemain lain memblokir koneksi langsung (P2P). Coba jaringan/Wi-Fi lain atau matikan VPN.',
-  'audio.title': 'Suara nyala atau mati (M)',
+  'audio.title': 'Bisukan suara lingkungan (suara pemain tetap)',
 
   // Voice chat
   'help.voice': ' · V — bicara',
