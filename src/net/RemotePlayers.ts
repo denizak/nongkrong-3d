@@ -1,10 +1,13 @@
 import * as THREE from 'three/webgpu';
+import { t } from '../i18n';
 import { CharacterModel, type Pose } from '../player/CharacterModel';
 import { encodeLook, type Look } from '../player/Look';
 import { centreOf, displayName, inProxyWindow } from '../world/Islands';
 import { SpeechBubble, placeOn } from '../ui/SpeechBubble';
 import { addBlobShadow } from '../world/BlobShadow';
 import { STALE_MS, type Net, type RemotePeer, type Snapshot } from './Net';
+import { voiceIcon } from './voiceIcon';
+import type { Voice } from './Voice';
 import './net.css';
 
 /** Render this far behind the newest snapshot, so there is usually a pair to interpolate between. */
@@ -40,6 +43,8 @@ interface Avatar {
   placeholder: Placeholder | null;
   nameTag: HTMLDivElement;
   nameShown: string;
+  /** The sound-wave mark above the name tag, shown while this player talks. */
+  voiceEl: HTMLDivElement;
   bubble: SpeechBubble;
   pose: Pose | null;
   lookKey: string;
@@ -114,9 +119,11 @@ function buildPlaceholder(look: Look): Placeholder {
 export class RemotePlayers {
   private avatars = new Map<string, Avatar>();
 
+  /** Voice chat, or null in ?solo. Gives the speaking mark and the tap-to-mute name tags. */
   constructor(
     private scene: THREE.Scene,
     private net: Net,
+    private voice: Voice | null = null,
   ) {
     net.onChat = (id, text) => this.say(id, text);
   }
@@ -167,6 +174,7 @@ export class RemotePlayers {
       if (shown.has(id)) continue;
       av.anchor.visible = false;
       av.nameTag.style.visibility = 'hidden';
+      av.voiceEl.style.visibility = 'hidden';
       av.bubble.el.style.visibility = 'hidden';
     }
   }
@@ -191,15 +199,24 @@ export class RemotePlayers {
       av.placeholder.body.position.y = 0.95 + Math.abs(Math.sin(performance.now() * 0.01 * s.speed)) * 0.08 * Math.min(1, s.speed / 4);
     }
 
-    // Away from my island, the tag also says which island the peer is on.
+    // Away from my island, the tag also says which island the peer is on. A muted voice gets a 🔇.
     const away = s.island !== here ? ` · ${displayName(s.island)}` : '';
-    const label = `${s.fishing ? '🎣 ' : ''}${av.peer.name}${away}`;
+    const muted = !!this.voice?.isPeerMuted(av.peer.id);
+    const label = `${s.fishing ? '🎣 ' : ''}${av.peer.name}${away}${muted ? ' 🔇' : ''}`;
     if (label !== av.nameShown) {
       av.nameShown = label;
       av.nameTag.textContent = label;
     }
     _pos.set(x, s.y + NAME_H[s.pose], z);
     placeOn(av.nameTag, _pos, camera, NAME_RANGE);
+
+    // Speaking mark above the tag, hidden while the player is muted or silent.
+    if (this.voice?.isSpeaking(av.peer.id) && !muted) {
+      _pos.set(x, s.y + NAME_H[s.pose] + 0.4, z);
+      placeOn(av.voiceEl, _pos, camera, NAME_RANGE);
+    } else {
+      av.voiceEl.style.visibility = 'hidden';
+    }
 
     _pos.set(x, s.y + BUBBLE_H[s.pose], z);
     av.bubble.place(_pos, camera);
@@ -238,6 +255,12 @@ export class RemotePlayers {
     nameTag.className = 'name-tag';
     nameTag.style.visibility = 'hidden';
     document.body.append(nameTag);
+    if (this.voice) {
+      // Tapping a name tag toggles muting that player for this session.
+      nameTag.classList.add('voice-clickable');
+      nameTag.title = t('voice.peerHint');
+      nameTag.addEventListener('click', () => this.voice?.togglePeerMute(p.id));
+    }
 
     av = {
       peer: p,
@@ -246,6 +269,7 @@ export class RemotePlayers {
       placeholder,
       nameTag,
       nameShown: '',
+      voiceEl: voiceIcon(),
       bubble: new SpeechBubble(),
       pose: null,
       lookKey: key,
@@ -265,6 +289,7 @@ export class RemotePlayers {
     }
     av.anchor.removeFromParent();
     av.nameTag.remove();
+    av.voiceEl.remove();
     av.bubble.destroy();
   }
 }

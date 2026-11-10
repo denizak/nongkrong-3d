@@ -190,7 +190,11 @@ async function boot() {
 
   // Multiplayer: presence and chat over WebRTC. Trystero loads when the game starts. ?solo turns it off.
   const net = new Net(() => look.current, { solo: params.has('solo') });
-  const remotes = new RemotePlayers(scene, net);
+  // Proximity voice chat. Its code loads only when networking is on, so ?solo never fetches it.
+  const voice = params.has('solo')
+    ? null
+    : new (await import('./net/Voice')).Voice({ net, audio: sfx, input, say: (msg) => inventory.toast(msg) });
+  const remotes = new RemotePlayers(scene, net, voice);
   loading.addNameField(net.name, (raw) => net.setName(raw) ?? net.name);
   chat.onSend = (text) => net.sendChat(text);
   chat.onName = (arg) => {
@@ -209,12 +213,12 @@ async function boot() {
   new IslandPill(archipelago);
   const netPill = new NetPill(net, archipelago);
   new NetDebug(net);
-  const mapWorld = { arch: archipelago, net, bridges, player };
+  const mapWorld = { arch: archipelago, net, bridges, player, talking: () => voice?.talkingNow ?? false };
   const minimap = new Minimap(mapWorld, shapes);
   const fullMap = new FullMap(mapWorld, shapes, input);
   const islandTitle = new IslandTitle();
   // Touch joystick, camera drag and buttons, with the map button. Does nothing on non-touch devices.
-  const touch = new TouchControls({ input, fishpedia, chat, map: fullMap });
+  const touch = new TouchControls({ input, fishpedia, chat, map: fullMap, voice });
 
   /** Build-time knobs as the scene was built. A change to any of these needs a reload to show in full. */
   const buildKey = (k: Knobs) => `${k.antialias}|${k.riceMul}|${k.waterLite}`;
@@ -373,7 +377,7 @@ async function boot() {
       game: {
         player, rig, camera, physics, interactions, inventory, pickups, prone: PRONE, sit: SIT,
         fishing, fishpedia, chat, birds, audio: sfx, save, loading, touch, daynight, weather,
-        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes, map: fullMap, minimap, shapes,
+        resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes, voice, map: fullMap, minimap, shapes,
         renderer, debugDrawStats: () => drawStats(scene, renderer), islandCount: ISLAND_COUNT,
         contents, terrains, ground, env,
         /** The live island's content: trees, paddy, props, torches, terrain, scarecrow. */
@@ -483,6 +487,7 @@ async function boot() {
         fishing: fishing.locked,
       });
       remotes.update(dt, camera, { island: archipelago.id, pos: player.position });
+      voice?.update(dt, camera, { island: archipelago.id, pos: player.position });
     }
     netPill.update(dt);
     minimap.update(dt);

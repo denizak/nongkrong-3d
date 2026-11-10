@@ -189,6 +189,8 @@ export class Net {
   onChange: (() => void) | null = null;
   /** Called with a validated, rate-limited chat message from a peer. */
   onChat: ((peerId: string, text: string) => void) | null = null;
+  /** Called with each joined Trystero room (again after a rejoin). Voice chat attaches here. */
+  onRoom: ((room: Room) => void) | null = null;
 
   private room: Room | null = null;
   private peerId = '';
@@ -263,6 +265,7 @@ export class Net {
       });
       this.room = room;
       this.peerId = t.selfId;
+      this.onRoom?.(room);
       this.st = room.makeAction<StateMsg>('st');
       this.hi = room.makeAction<HiMsg>('hi');
       this.ch = room.makeAction<ChatMsg>('ch');

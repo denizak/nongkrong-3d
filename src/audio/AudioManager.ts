@@ -65,6 +65,9 @@ export class AudioManager {
   private musicBus: GainNode | null = null;
   private ambienceBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
+  /** Remote voice chat goes through this bus (see Voice.ts). It sits between the voices and master. */
+  voiceBus: GainNode | null = null;
+  private unlockListeners: (() => void)[] = [];
   private synth: Synth | null = null;
   private music: Music | null = null;
   private ambience: Ambience | null = null;
@@ -109,6 +112,22 @@ export class AudioManager {
     window.addEventListener('pointerdown', gesture);
     window.addEventListener('keydown', gesture);
     window.addEventListener('keydown', (e) => this.onKey(e));
+  }
+
+  /** The AudioContext once a gesture has created it, else null. */
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  /** Creates the context now. Call only from inside a user gesture handler (the mic button and V key do). */
+  unlockNow() {
+    this.unlock();
+  }
+
+  /** Runs `cb` once the context exists: at once if it already does, else when the first gesture creates it. */
+  onUnlock(cb: () => void) {
+    if (this.ctx) cb();
+    else this.unlockListeners.push(cb);
   }
 
   /** Dev and test handle: what has unlocked, what is muted, and which samples loaded or failed. */
@@ -238,6 +257,9 @@ export class AudioManager {
     this.sfxBus = ctx.createGain();
     this.sfxBus.gain.value = 0.8;
     this.sfxBus.connect(this.master);
+    this.voiceBus = ctx.createGain();
+    this.voiceBus.gain.value = 1;
+    this.voiceBus.connect(this.master);
 
     this.noise = makeNoise(ctx, 2);
     this.synth = new Synth(ctx, this.noise);
@@ -247,6 +269,9 @@ export class AudioManager {
     this.ambience.start();
     if (ctx.state === 'suspended') void ctx.resume();
     this.syncPill();
+    const listeners = this.unlockListeners;
+    this.unlockListeners = [];
+    for (const cb of listeners) cb();
   }
 
   /** Head of a voice chain: gain, then a stereo panner when `at` is given, then the sfx bus. Null when out of range. */

@@ -4,6 +4,7 @@ import type { Bridges } from '../world/Bridges';
 import type { IslandShapes } from '../world/IslandShapes';
 import type { Net } from '../net/Net';
 import { quality } from '../core/Quality';
+import { VOICE_RANGE } from '../net/voiceMath';
 import { drawArrow, drawBridges, drawDot, drawShapes, localWorld, remoteMarks, SEA, CREAM, type PlayerLike } from './mapCommon';
 
 /** Metres across the minimap (diameter). */
@@ -16,6 +17,8 @@ export interface MapWorld {
   net: Net;
   bridges: Bridges;
   player: PlayerLike;
+  /** True while the player is talking: a faint ring shows the 20 m voice range. */
+  talking?: () => boolean;
 }
 
 /**
@@ -78,6 +81,16 @@ export class Minimap {
       drawDot(ctx, p.x, p.y, 4, m.color);
     }
     drawArrow(ctx, r, r, this.world.player.headingAngle, 7);
+    if (this.world.talking?.()) {
+      // Voice range: a dashed ring of VOICE_RANGE metres around the player.
+      ctx.beginPath();
+      ctx.arc(r, r, VOICE_RANGE * k, 0, Math.PI * 2);
+      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = 'rgba(90, 122, 58, 0.85)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
 
     ctx.beginPath();

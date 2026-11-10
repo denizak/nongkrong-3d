@@ -4,6 +4,7 @@ import type { Input } from '../core/Input';
 import type { Fishpedia } from './Fishpedia';
 import type { ChatBubble } from './ChatBubble';
 import type { FullMap } from './FullMap';
+import type { Voice } from '../net/Voice';
 
 /** Joystick radius in px; the knob never travels further than this. */
 const STICK_R = 55;
@@ -25,6 +26,8 @@ interface Deps {
   fishpedia: Fishpedia;
   chat: ChatBubble;
   map: FullMap;
+  /** Voice chat, or null in ?solo. Adds the mic button when set and enabled. */
+  voice: Voice | null;
 }
 
 interface Tracked {
@@ -43,6 +46,7 @@ export class TouchControls {
   private fishpedia: Fishpedia;
   private chat: ChatBubble;
   private map: FullMap;
+  private voice: Voice | null;
   private tracked = new Map<number, Tracked>();
   private stickId = -1;
   private stickX = 0;
@@ -56,6 +60,7 @@ export class TouchControls {
     this.fishpedia = deps.fishpedia;
     this.chat = deps.chat;
     this.map = deps.map;
+    this.voice = deps.voice;
     this.enabled = TouchControls.isTouchDevice();
     if (!this.enabled) return;
 
@@ -110,10 +115,14 @@ export class TouchControls {
       this.button('🪑', t('touch.sit'), () => this.input.pressSit()),
       this.button('🗺️', t('touch.map'), () => this.map.toggle()),
     );
-    row2.append(
-      this.button('😴', t('touch.lie'), () => this.input.pressLie()),
-      this.button('✋', t('touch.action'), () => this.input.pressInteract(), 'big'),
-    );
+    row2.append(this.button('😴', t('touch.lie'), () => this.input.pressLie()));
+    if (this.voice) {
+      // Hold to talk, or tap in open-mic mode. The voice module wires the presses and shows the state.
+      const mic = this.button('🎤', t('voice.touch'), () => {});
+      this.voice.attachMicButton(mic);
+      row2.append(mic);
+    }
+    row2.append(this.button('✋', t('touch.action'), () => this.input.pressInteract(), 'big'));
     cluster.append(row1, row2);
     document.body.append(cluster);
   }

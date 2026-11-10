@@ -79,6 +79,22 @@ const en = {
   'audio.title': 'Sound on or off (M)',
   'lang.title': 'Switch language',
 
+  // Voice chat
+  'help.voice': ' · V — talk',
+  'voice.title': 'Voice chat (V)',
+  'voice.menu': 'Voice',
+  'voice.hintHold': 'Hold V to talk',
+  'voice.hintOpen': 'Press V to start or stop talking',
+  'voice.hold': 'Hold',
+  'voice.open': 'Open mic',
+  'voice.muteAll': 'Mute all voices',
+  'voice.volume': 'Volume',
+  'voice.range': 'Heard within 20 m',
+  'voice.peerHint': "Tap a player's name to mute them",
+  'voice.blocked': 'Microphone blocked or unavailable',
+  'voice.blockedToast': 'Microphone blocked. Allow the mic in your browser to talk.',
+  'voice.touch': 'Talk',
+
   // Chat and names
   'chat.placeholder': 'Say something…',
   'chat.aria': 'Chat message',
@@ -230,6 +246,22 @@ const id: Record<Key, string> = {
   'net.failed': '👥 ⚠️ {n} pemain terdeteksi tapi gagal tersambung (jaringan)',
   'net.failedHelp': 'Jaringanmu atau jaringan pemain lain memblokir koneksi langsung (P2P). Coba jaringan/Wi-Fi lain atau matikan VPN.',
   'audio.title': 'Suara nyala atau mati (M)',
+
+  // Voice chat
+  'help.voice': ' · V — bicara',
+  'voice.title': 'Obrolan suara (V)',
+  'voice.menu': 'Suara',
+  'voice.hintHold': 'Tekan V untuk bicara',
+  'voice.hintOpen': 'Tekan V untuk mulai atau berhenti bicara',
+  'voice.hold': 'Tekan & tahan',
+  'voice.open': 'Mic terbuka',
+  'voice.muteAll': 'Bisukan semua suara',
+  'voice.volume': 'Volume',
+  'voice.range': 'Terdengar sejauh 20 m',
+  'voice.peerHint': 'Ketuk nama pemain untuk membisukannya',
+  'voice.blocked': 'Mikrofon diblokir atau tidak tersedia',
+  'voice.blockedToast': 'Mikrofon diblokir. Izinkan mikrofon di browser untuk bicara.',
+  'voice.touch': 'Bicara',
   'lang.title': 'Ganti bahasa',
 
   'chat.placeholder': 'Ketik sesuatu…',

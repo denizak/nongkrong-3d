@@ -1,0 +1,55 @@
+/* Voice chat: the 🎤 pill and its menu, the speaking mark above a robot, and the touch mic button. */
+
+#voice-toggle.voice-pill {
+  position: fixed; top: 56px; right: 140px; z-index: 40;
+  min-width: 36px; height: 26px; padding: 0 8px; box-sizing: border-box;
+  border: none; border-radius: 999px; cursor: pointer;
+  font: 14px/26px system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+#voice-toggle.voice-pill:focus-visible { outline: 2px solid #5a7a3a; }
+#voice-toggle.voice-pill.talking { background: #d9efc9; }
+#voice-toggle.voice-pill.blocked { opacity: 0.6; }
+
+#voice-menu {
+  position: fixed; top: 88px; right: 136px; z-index: 41; width: 230px; box-sizing: border-box;
+  padding: 10px; border-radius: 14px; background: #fff9e8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 600 14px/1.3 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+}
+#voice-menu[hidden] { display: none; }
+#voice-menu .v-title { font-size: 12px; font-weight: 700; color: #5a7a3a; margin: 0 2px 6px; }
+#voice-menu .v-hint { font-size: 12px; font-weight: 600; margin: 0 2px 8px; }
+#voice-menu .v-modes { display: flex; gap: 6px; margin-bottom: 6px; }
+#voice-menu button.v-opt {
+  flex: 1; display: flex; justify-content: space-between; align-items: center; width: 100%;
+  margin: 3px 0; padding: 8px 10px; border: none; border-radius: 10px; cursor: pointer;
+  font: inherit; color: inherit; background: rgba(255, 255, 255, 0.6); text-align: left;
+}
+#voice-menu button.v-opt:hover, #voice-menu button.v-opt:focus-visible { outline: 2px solid #5a7a3a; outline-offset: -2px; }
+#voice-menu button.v-opt.on { background: #d9efc9; }
+#voice-menu .v-vol { display: flex; align-items: center; gap: 8px; margin: 8px 2px 4px; font-size: 12px; }
+#voice-menu .v-vol input { flex: 1; accent-color: #5a7a3a; }
+#voice-menu .v-range, #voice-menu .v-peer { font-size: 12px; font-weight: 600; color: #5a7a3a; margin: 6px 2px 0; }
+#voice-menu .v-blocked { font-size: 12px; font-weight: 600; color: #a4402e; margin: 8px 2px 0; }
+#voice-menu [hidden] { display: none; }
+
+/* Speaking mark above a robot (remote) or above my own head. Positioned per frame by placeOn. */
+.voice-icon, .voice-self {
+  position: fixed; left: 0; top: 0; z-index: 19; pointer-events: none;
+  padding: 4px 8px; border-radius: 999px; background: rgba(255, 252, 240, 0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+.voice-wave { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.voice-wave span { display: block; width: 3px; height: 4px; border-radius: 2px; background: #5a7a3a; animation: voice-bar 0.6s ease-in-out infinite alternate; }
+.voice-wave span:nth-child(2) { animation-delay: 0.2s; }
+.voice-wave span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes voice-bar { from { height: 3px; } to { height: 12px; } }
+
+/* A name tag can be tapped to mute its player. Tags are otherwise click-through. */
+.name-tag.voice-clickable { pointer-events: auto; cursor: pointer; }
+
+/* Touch: the pill sits left of the graphics pill, inside the safe area. */
+html.touch #voice-toggle.voice-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 154px);
+  min-width: 42px; height: 38px; font-size: 18px; line-height: 38px;
+}
+html.touch #voice-menu { top: calc(env(safe-area-inset-top, 0px) + 56px); right: calc(env(safe-area-inset-right, 0px) + 150px); }
