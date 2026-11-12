@@ -1,0 +1,34 @@
+/* Private room pill (top-right, right of the graphics pill) and its menu. Same look as quality.css. */
+#room-toggle.room-pill {
+  position: fixed; top: 56px; right: 140px; z-index: 40;
+  min-width: 36px; height: 26px; padding: 0 8px; box-sizing: border-box;
+  border: none; border-radius: 999px; cursor: pointer;
+  font: 14px/26px system-ui, -apple-system, sans-serif; color: #2f3b2a;
+  background: rgba(255, 252, 240, 0.85); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+#room-toggle.room-pill:focus-visible { outline: 2px solid #5a7a3a; }
+#room-menu {
+  position: fixed; top: 88px; right: 96px; z-index: 41; width: 240px; box-sizing: border-box;
+  padding: 10px; border-radius: 14px; background: #fff9e8; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font: 600 14px/1.3 system-ui, -apple-system, sans-serif; color: #2f3b2a;
+}
+#room-menu[hidden] { display: none; }
+#room-menu .r-title { font-size: 12px; font-weight: 700; color: #5a7a3a; margin: 0 2px 6px; }
+#room-menu .r-text { margin: 0 2px 8px; font-weight: 600; }
+#room-menu button.r-btn {
+  display: block; width: 100%; box-sizing: border-box; margin: 3px 0; padding: 8px 10px; border: none;
+  border-radius: 10px; cursor: pointer; text-align: left;
+  font: inherit; color: inherit; background: rgba(255, 255, 255, 0.6);
+}
+#room-menu button.r-btn:hover, #room-menu button.r-btn:focus-visible { outline: 2px solid #5a7a3a; outline-offset: -2px; }
+#room-menu .r-field {
+  width: 100%; box-sizing: border-box; margin: 6px 0 0; padding: 6px 8px; border: none; border-radius: 8px;
+  font: 12px/1.3 ui-monospace, Menlo, monospace; color: #2f3b2a; background: #fffdf4;
+}
+#room-menu .r-field[hidden] { display: none; }
+#room-menu .r-note { margin: 8px 2px 0; font-size: 12px; font-weight: 600; color: #a4402e; }
+/* Touch layout: the pill sits left of the graphics pill, inside the safe area. */
+html.touch #room-toggle.room-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 146px);
+}
+html.touch #room-menu { top: calc(env(safe-area-inset-top, 0px) + 50px); right: calc(env(safe-area-inset-right, 0px) + 100px); }

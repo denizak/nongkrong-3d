@@ -36,6 +36,7 @@ import { Net } from './net/Net';
 import { RemotePlayers } from './net/RemotePlayers';
 import { NetPill } from './net/NetPill';
 import { NetDebug } from './net/NetDebug';
+import { RoomMenu } from './ui/RoomMenu';
 import { Minimap } from './ui/Minimap';
 import { FullMap } from './ui/FullMap';
 import { IslandTitle } from './ui/IslandTitle';
@@ -370,6 +371,8 @@ async function boot() {
   booted = true;
   rig.snapTo(player.position);
   save.start();
+  // Private rooms: the 🔒 pill. Switching rooms saves the game first, then reloads.
+  new RoomMenu(net, () => save.write());
 
   // Dev-only handle for poking at the game from the browser console.
   if (import.meta.env.DEV)

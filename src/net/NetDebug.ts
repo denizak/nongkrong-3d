@@ -29,6 +29,7 @@ export class NetDebug {
       const relays = net.relayStates();
       const lines = [
         `status      ${net.status}`,
+        `room        ${net.roomKind}`,
         `selfId      ${net.selfId || '-'}`,
         `peers       ${net.online}`,
         `failed      ${net.failedPeers.size} (errors ${net.errorCount})`,

@@ -32,6 +32,10 @@ Seret untuk memutar kamera dan scroll untuk zoom. Ganti bahasa lewat tombol EN/I
 - Mancing di kolam atau laut. Tekan E saat ikan menggigit, lalu lihat koleksimu di Fishpedia.
 - Colek orang-orangan sawah, dan ajak temanmu ngobrol. Ketik `/nama NamaBaru` untuk ganti nama.
 
+### Ruangan pribadi
+
+Secara default semua orang ada di ruangan publik. Klik 🔒 di kanan atas lalu **Buat ruangan pribadi** untuk membuat ruangan sendiri, lalu salin tautan undangannya. Hanya orang yang punya tautan itu yang bisa bergabung. Tautan ini rahasia: relay tidak bisa membaca sinyal atau nama ruangannya, tapi siapa pun yang memegang tautan bisa masuk, jadi bagikan hanya ke temanmu. Untuk kembali ke ruangan publik, klik 🔒 lalu **Kembali ke ruangan publik**.
+
 ### Masalah multiplayer
 
 Pill di bawah nama pulau menunjukkan kondisinya:
@@ -73,6 +77,8 @@ Drag to orbit the camera and scroll to zoom.
 ## Multiplayer
 
 Players meet peer-to-peer over WebRTC. [Trystero](https://github.com/dmotz/trystero) uses the self-hosted Nostr relay and public fallback relays for discovery and signalling. Everyone is in one shared world. You see other robots on your island and on the islands next to it, with their names and chat bubbles. Type `/name NewName` in the chat box to change your name, or set it on the loading screen.
+
+**Private rooms:** click the 🔒 pill (top right) and choose *Create private room* to get an invite link. Only people with the link can join. The secret is in the URL fragment (`#r=...`), which browsers never send to servers, and relays only see a hash of the room id and encrypted signalling. The link is a secret, so share it only with friends. Choose *Back to public room* to leave.
 
 Add `?solo` to the URL to play offline with no networking. Strict networks (some corporate or school firewalls) may block direct connections, in which case you simply won't see other players and the HUD shows the count.
 

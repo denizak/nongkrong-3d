@@ -3,6 +3,7 @@ import type { JoinError, JoinRoomConfig, MessageAction, Room, TurnServerConfig }
 import { decodeLook, encodeLook, makeLook, randomLook, type Look } from '../player/Look';
 import type { Pose } from '../player/CharacterModel';
 import { ISLAND_COUNT, inProxyWindow } from '../world/Islands';
+import { deriveRoom, generateSecret, inviteUrl, parseSecret, readHashSecret } from './room';
 
 /**
  * Peer-to-peer presence over WebRTC. Trystero finds peers through Nostr relays and then connects them directly.
@@ -16,6 +17,8 @@ import { ISLAND_COUNT, inProxyWindow } from '../world/Islands';
 
 export const APP_ID = 'nongkrong-3d-v2';
 const ROOM_ID = 'world';
+/** localStorage key for the remembered private room secret. Public play has no entry. */
+const ROOM_KEY = 'nongkrong.room';
 export const MAX_NAME = 20;
 export const MAX_CHAT = 80;
 const CHAT_GAP_MS = 1500;
@@ -156,6 +159,34 @@ export function turnServers(): TurnServerConfig[] | null {
   ];
 }
 
+export type RoomKind = 'public' | 'private';
+
+/** Stores a private room secret so the room survives reloads without the link. Storage blocked: ignored. */
+function storeRoom(secret: string) {
+  try {
+    localStorage.setItem(ROOM_KEY, secret);
+  } catch {
+    // Storage blocked: this visit still uses the room.
+  }
+}
+
+/**
+ * The private room for this visit: the fragment wins (and is remembered), else the remembered secret, else null
+ * (the public world).
+ */
+function resolveSecret(): string | null {
+  const fromHash = readHashSecret(location);
+  if (fromHash) {
+    storeRoom(fromHash);
+    return fromHash;
+  }
+  try {
+    return parseSecret(localStorage.getItem(ROOM_KEY));
+  } catch {
+    return null;
+  }
+}
+
 function newPeer(id: string, name: string, look: Look, fake = false): RemotePeer {
   return { id, name, look, snaps: [], lastState: 0, lastChat: -Infinity, fake, angle: Math.random() * Math.PI * 2, fakePose: 'stand' };
 }
@@ -215,8 +246,12 @@ export class Net {
   /** Number of per-peer connection errors reported so far. */
   errorCount = 0;
 
+  /** The private room secret, or null for the public world. Never logged, shown or exposed. */
+  private readonly secret: string | null;
+
   constructor(private getLook: () => Look, opts: { solo?: boolean } = {}) {
     this.solo = !!opts.solo;
+    this.secret = resolveSecret();
     this.name = loadName();
     if (!this.solo) window.addEventListener('online', () => void this.onNetworkBack());
   }
@@ -224,6 +259,40 @@ export class Net {
   /** The Trystero peer id of this player. Empty until joined. */
   get selfId(): string {
     return this.peerId;
+  }
+
+  /** 'private' when this visit is in an invite-link room (or a remembered one), else 'public'. */
+  get roomKind(): RoomKind {
+    return this.secret ? 'private' : 'public';
+  }
+
+  /** The invite link for the current private room, or null in the public world. */
+  inviteLink(): string | null {
+    return this.secret ? inviteUrl(this.secret, location.origin, import.meta.env.BASE_URL) : null;
+  }
+
+  /**
+   * Moves to a new private room (a fresh secret unless given) by reloading the page. `flush` saves the game first.
+   * The secret is stored and put in the fragment, so the reloaded page joins that room.
+   */
+  enterPrivateRoom(flush: () => void, secret: string = generateSecret()): void {
+    if (!parseSecret(secret)) return;
+    flush();
+    storeRoom(secret);
+    location.hash = `r=${secret}`;
+    location.reload();
+  }
+
+  /** Back to the public world: forgets the private room, drops the fragment, saves, and reloads. */
+  leavePrivateRoom(flush: () => void): void {
+    try {
+      localStorage.removeItem(ROOM_KEY);
+    } catch {
+      // Storage blocked: the fragment is still removed below.
+    }
+    history.replaceState(history.state, '', location.pathname + location.search);
+    flush();
+    location.reload();
   }
 
   /** Number of connected remote peers (fake ones included). */
@@ -255,12 +324,15 @@ export class Net {
       const t = await import('trystero');
       this.sockets = () => t.getRelaySockets();
       const turn = turnServers();
+      // Public: the fixed id and no password, as before. Private: a hashed id and a key derived from the secret.
+      const priv = this.secret ? await deriveRoom(this.secret) : null;
       const config: JoinRoomConfig = {
         appId: APP_ID,
         relayConfig: { urls: RELAY_URLS },
+        ...(priv ? { password: priv.password } : {}),
         ...(turn ? { turnConfig: turn } : {}),
       };
-      const room = t.joinRoom(config, ROOM_ID, {
+      const room = t.joinRoom(config, priv?.roomId ?? ROOM_ID, {
         onJoinError: (e) => this.onJoinError(e),
       });
       this.room = room;

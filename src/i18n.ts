@@ -103,6 +103,19 @@ const en = {
   'net.pal': 'Pal {n}',
   'net.friend': 'Friend',
 
+  // Private rooms
+  'room.title': 'Room',
+  'room.publicText': 'Public room — anyone can join',
+  'room.create': '🔒 Create private room',
+  'room.confirm': 'Create a private room? Only people with the invite link can join. The link is a secret, so share it only with friends. The page will reload.',
+  'room.privateText': 'Private room',
+  'room.copy': '📋 Copy invite link',
+  'room.copied': '✓ Link copied',
+  'room.field': 'Select the link and copy it',
+  'room.share': '📤 Share',
+  'room.back': '🌐 Back to public room',
+  'room.note': 'This link is secret. Share it only with friends.',
+
   // Fishpedia
   'pedia.title': 'Fishpedia',
   'pedia.new': 'New in your Fishpedia!',
@@ -270,6 +283,19 @@ const id: Record<Key, string> = {
   'name.set': 'Nama: {name}',
   'net.pal': 'Teman {n}',
   'net.friend': 'Teman',
+
+  // Private rooms
+  'room.title': 'Ruangan',
+  'room.publicText': 'Ruangan publik — siapa saja bisa bergabung',
+  'room.create': '🔒 Buat ruangan pribadi',
+  'room.confirm': 'Buat ruangan pribadi? Hanya orang yang punya tautan undangan yang bisa bergabung. Tautan ini rahasia, jadi bagikan hanya ke temanmu. Halaman akan dimuat ulang.',
+  'room.privateText': 'Ruangan pribadi',
+  'room.copy': '📋 Salin tautan undangan',
+  'room.copied': '✓ Tautan disalin',
+  'room.field': 'Pilih tautannya lalu salin',
+  'room.share': '📤 Bagikan',
+  'room.back': '🌐 Kembali ke ruangan publik',
+  'room.note': 'Tautan ini rahasia. Bagikan hanya ke temanmu.',
 
   'pedia.title': 'Fishpedia',
   'pedia.new': 'Baru di Fishpedia-mu!',

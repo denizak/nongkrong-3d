@@ -50,6 +50,7 @@ export class NetPill {
     else if (failed) text = t('net.failed', { n: net.failedPeers.size });
     else if (net.online === 0) text = t('net.zero');
     else text = t('net.online', { online: net.online, nearby: net.nearby(this.arch.id) });
+    if (net.roomKind === 'private') text = `🔒 ${text}`;
 
     if (failed !== this.failing) {
       this.failing = failed;
