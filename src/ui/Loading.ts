@@ -181,6 +181,7 @@ export class Loading {
    */
   ready(): Promise<void> {
     this.setProgress(1, t('loading.ready'));
+    this.root.classList.add('ready');
     this.track.hidden = true;
     this.label.hidden = true;
     if (this.lookBox) this.lookBox.hidden = false;

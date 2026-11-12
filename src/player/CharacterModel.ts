@@ -247,8 +247,6 @@ export class CharacterModel {
   private static template: { scene: THREE.Group; animations: THREE.AnimationClip[]; setup: CloneSetup } | null = null;
   /** Rest measurements. Local robots take them from their own vertices; clones copy them from the local robot. */
   private restProfile: RestProfile | null = null;
-  /** True for remote clones, which use the local robot's rest profile instead of measuring their own vertices. */
-  private fromTemplate = false;
 
   /**
    * `clone` is set for remote clones: the local robot's normalisation factor and rest profile. Clones never
@@ -267,7 +265,6 @@ export class CharacterModel {
     if (clone) {
       gltf.scene.scale.setScalar(clone.scale);
       this.restProfile = clone.rest;
-      this.fromTemplate = true;
     } else {
       const size = new THREE.Box3().setFromObject(gltf.scene);
       gltf.scene.scale.setScalar(TARGET_HEIGHT / Math.max(1e-3, size.max.y - size.min.y));
@@ -319,7 +316,7 @@ export class CharacterModel {
    * vertices, so it is right for clones too. Box3 gave a 1.15 m error on clones.
    */
   private settleFeet() {
-    if (this.fromTemplate && this.restProfile) {
+    if (this.restProfile) {
       this.scene.position.y = this.restProfile.feetPerScale * this.scene.scale.x;
       this.scene.updateWorldMatrix(true, true);
       return;
@@ -337,7 +334,7 @@ export class CharacterModel {
 
   /** Measures the bind pose: pivot-space bounds, and the prone and sit bones and lengths. Tip must be identity. */
   private measure() {
-    if (this.fromTemplate && this.restProfile) {
+    if (this.restProfile) {
       const s = this.scene.scale.x;
       this.bounds.min.copy(this.restProfile.unitBounds.min).multiplyScalar(s);
       this.bounds.max.copy(this.restProfile.unitBounds.max).multiplyScalar(s);

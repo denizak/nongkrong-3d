@@ -44,6 +44,18 @@
       #loading .look-full.collapsed { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
       #loading .look-inner { min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 4px 0; }
       #loading [hidden] { display: none !important; }
+      /* Ready: the gradient goes away so the world is visible, and the card becomes a small bottom panel. */
+      #loading.ready { background: transparent; align-items: flex-end; padding-bottom: max(3vh, env(safe-area-inset-bottom)); pointer-events: none; }
+      #loading.ready .card { pointer-events: auto; width: min(340px, 90vw); padding: 14px 18px 16px; border-radius: 22px; background: rgba(255, 249, 232, 0.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); }
+      #loading.ready h1 { font-size: 22px; color: #2f3b2a; text-shadow: none; }
+      #loading.ready .sub { margin: 0 0 10px; font-size: 13px; }
+      #loading.ready .look { margin-bottom: 12px; gap: 8px; }
+      #loading.ready .swatch { width: 44px; height: 44px; }
+      #loading.ready .look-name, #loading.ready .look-compact { color: #2f3b2a; text-shadow: none; }
+      #loading.ready button { font-size: 18px; padding: 10px 32px; background: #fff; }
+      #loading.ready .name-field { color: #2f3b2a; text-shadow: none; }
+      /* Wide screens: the panel sits in the bottom-right corner so the robot stays in view. */
+      @media (min-width: 720px) { #loading.ready { justify-content: flex-end; padding-right: 24px; padding-bottom: 24px; } }
     </style>
   </head>
   <body>

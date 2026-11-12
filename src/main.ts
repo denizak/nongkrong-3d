@@ -492,6 +492,8 @@ async function boot() {
       remotes.update(dt, camera, { island: archipelago.id, pos: player.position });
       voice?.update(dt, camera, { island: archipelago.id, pos: player.position });
     }
+    // On the start panel the robot idles in place, so a shuffled look shows up on the live model.
+    if (!started) player.update(dt, NO_MOVE, false, rig.basis());
     netPill.update(dt);
     minimap.update(dt);
     fullMap.update();
