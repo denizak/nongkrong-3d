@@ -103,6 +103,19 @@ export class Proxies {
     }
   }
 
+  /**
+   * Makes sure one proxy of each island kind exists and shows it, so a warm-up render uploads their meshes and
+   * compiles their materials. Call update() afterwards to put visibility back.
+   */
+  warm() {
+    for (const kind of ['normal', 'main'] as const) {
+      const def = ISLANDS.find((d) => d.kind === kind);
+      if (!def) continue;
+      const proxy = this.items.get(def.id) ?? this.make(def.id);
+      proxy.object.visible = true;
+    }
+  }
+
   /** Per frame: copy the live torch state into the visible proxies. */
   sync() {
     for (const p of this.items.values()) {

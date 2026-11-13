@@ -411,6 +411,31 @@ async function boot() {
 
   // The world renders behind the loading overlay, but nothing reacts to input until the player starts.
   let started = false;
+  // Warm-up: draw both island kinds and one proxy of each once while the loading card is up. Without it the
+  // first visit to each kind (or the first proxy to appear) uploads geometry and compiles shaders mid-play,
+  // which froze the game for up to a couple of seconds.
+  loading.setProgress(0.97, t('loading.almost'));
+  {
+    const shown = [contents.normal.root.visible, contents.main.root.visible];
+    contents.normal.root.visible = contents.main.root.visible = true;
+    proxies.warm();
+    const culled: THREE.Object3D[] = [];
+    scene.traverse((o) => {
+      if (o.frustumCulled && ((o as THREE.Mesh).isMesh || (o as THREE.Points).isPoints)) {
+        o.frustumCulled = false;
+        culled.push(o);
+      }
+    });
+    try {
+      await renderer.compileAsync(scene, camera);
+      renderer.render(scene, camera);
+    } catch (err) {
+      console.warn('[warm-up] skipped', err);
+    }
+    for (const o of culled) o.frustumCulled = true;
+    [contents.normal.root.visible, contents.main.root.visible] = shown;
+    proxies.update(archipelago.id);
+  }
   void loading.ready().then(() => {
     started = true;
     touch.showHint();
