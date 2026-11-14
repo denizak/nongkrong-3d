@@ -54,6 +54,10 @@
       #loading.ready .look-name, #loading.ready .look-compact { color: #2f3b2a; text-shadow: none; }
       #loading.ready button { font-size: 18px; padding: 10px 32px; background: #fff; }
       #loading.ready .name-field { color: #2f3b2a; text-shadow: none; }
+      #loading.ready .card { max-height: 90dvh; overflow-y: auto; }
+      #loading .privacy-summary { font-size: 12px; line-height: 1.4; margin: 10px 0; }
+      #loading .privacy-summary a { color: #285b4c; font-weight: 700; }
+      #loading.ready .solo-button { margin-top: 8px; font-size: 14px; padding: 8px 20px; }
       /* Wide screens: the panel sits in the bottom-right corner so the robot stays in view. */
       @media (min-width: 720px) { #loading.ready { justify-content: flex-end; padding-right: 24px; padding-bottom: 24px; } }
     </style>
@@ -65,7 +69,9 @@
         <p class="sub" data-i18n="loading.sub">tempat nongkrong santai di pulau</p>
         <div id="loading-track" class="track"><div id="loading-fill" class="fill"></div></div>
         <div id="loading-label" class="label" data-i18n="loading.starting">Memulai…</div>
+        <p id="loading-privacy" class="privacy-summary" hidden><span data-i18n="privacy.summary">Your game and settings are stored in this browser. Multiplayer shares your name, position, chat and, when enabled, voice with other players and uses external connection services.</span> <a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link">Privacy notice</a></p>
         <button id="loading-start" data-i18n="loading.start" hidden>Klik untuk mulai</button>
+        <button id="loading-solo" class="solo-button" data-i18n="privacy.solo" hidden>Play solo</button>
       </div>
     </div>
     <div id="app"></div>
@@ -74,6 +80,7 @@
     <div id="prompt"></div>
     <div id="hud">
       <div class="title">Nongkrong 3D</div>
+      <a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link">Privacy notice</a>
       <div id="backend" data-i18n="backend.starting">memulai…</div>
       <div class="help" data-i18n="help.base">WASD / panah — jalan · Shift — lari · E — interaksi · C — duduk · Z — rebahan · F — Fishpedia · P — peta · seret — putar kamera · scroll — zoom</div>
     </div>

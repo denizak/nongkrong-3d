@@ -47,6 +47,8 @@ export class Loading {
   private fill = document.getElementById('loading-fill')!;
   private label = document.getElementById('loading-label')!;
   private button = document.getElementById('loading-start') as HTMLButtonElement;
+  private soloButton = document.getElementById('loading-solo') as HTMLButtonElement;
+  private privacy = document.getElementById('loading-privacy')!;
   private started = false;
   /** Read once at construction, before this visit saves anything. */
   private returning = isReturningVisitor();
@@ -186,6 +188,19 @@ export class Loading {
     this.label.hidden = true;
     if (this.lookBox) this.lookBox.hidden = false;
     this.button.hidden = false;
+    this.privacy.hidden = false;
+    const params = new URLSearchParams(location.search);
+    const solo = params.has('solo');
+    this.soloButton.hidden = solo;
+    if (solo) {
+      const summary = this.privacy.querySelector('span');
+      if (summary) summary.textContent = t('privacy.soloActive');
+    }
+    this.soloButton.addEventListener('click', () => {
+      const url = new URL(location.href);
+      url.searchParams.set('solo', '');
+      location.assign(url.href);
+    });
     this.button.focus({ preventScroll: true });
 
     return new Promise((resolve) => {
@@ -203,8 +218,8 @@ export class Loading {
         if (e.code !== 'Enter' && e.code !== 'Space') return;
         // Typing in the name box is not a start press.
         if (e.target instanceof HTMLInputElement) return;
-        // Enter or Space on the Edit button presses that button instead of starting.
-        if (e.target instanceof HTMLButtonElement && e.target.classList.contains('look-edit')) return;
+        // Let links and other buttons perform their native action.
+        if (e.target instanceof HTMLAnchorElement || (e.target instanceof HTMLButtonElement && e.target !== this.button)) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         if (!e.repeat) start();

@@ -12,6 +12,10 @@ const STORE_KEY = 'nongkrong.lang';
 
 const en = {
   // Loading overlay
+  'privacy.summary': 'Your game and settings are stored in this browser. Multiplayer shares your name, position, chat and, when enabled, voice with other players and uses external connection services.',
+  'privacy.link': 'Privacy notice',
+  'privacy.solo': 'Play solo',
+  'privacy.soloActive': 'Solo mode: multiplayer is off.',
   'loading.sub': 'a cozy island hangout',
   'loading.start': 'Click to start',
   'loading.starting': 'Starting…',
@@ -197,6 +201,10 @@ const en = {
 export type Key = keyof typeof en;
 
 const id: Record<Key, string> = {
+  'privacy.summary': 'Permainan dan pengaturan disimpan di browser ini. Dalam multiplayer, nama, posisi, chat dan, jika diaktifkan, suara dibagikan kepada pemain lain melalui layanan koneksi eksternal.',
+  'privacy.link': 'Pemberitahuan privasi',
+  'privacy.solo': 'Main sendiri',
+  'privacy.soloActive': 'Mode sendiri: multiplayer nonaktif.',
   'loading.sub': 'tempat nongkrong santai di pulau',
   'loading.start': 'Klik untuk mulai',
   'loading.starting': 'Memulai…',
