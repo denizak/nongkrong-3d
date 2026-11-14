@@ -110,6 +110,13 @@ export class Scarecrow implements Interactable {
     this.deps.birds.scareAll();
   }
 
+  /** Island-local animation and DOM must not survive an island switch. */
+  clearTransients() {
+    if (this.spinT >= 0) this.deps.group.rotation.set(0, this.yaw0, 0);
+    this.spinT = this.bubbleT = -1;
+    this.bubble.classList.remove('show');
+  }
+
   update(dt: number) {
     const g = this.deps.group;
     if (this.spinT >= 0) {

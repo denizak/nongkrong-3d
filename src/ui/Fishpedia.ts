@@ -1,5 +1,6 @@
 import { SPECIES, speciesName, type Species, type WaterKind } from '../interact/FishSpecies';
 import { t } from '../i18n';
+import { isTyping } from '../world/DayNight';
 import { sfx } from '../audio/AudioManager';
 
 const KEY = 'nongkrong.fishpedia';
@@ -31,7 +32,7 @@ export class Fishpedia {
     this.card.id = 'catch-card';
     document.body.append(this.panel, this.card);
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyF' && !e.repeat) this.toggle();
+      if (e.code === 'KeyF' && !e.repeat && !isTyping()) this.toggle();
     });
     this.render();
   }
@@ -99,6 +100,10 @@ export class Fishpedia {
   }
 
   private save() {
-    localStorage.setItem(KEY, JSON.stringify(this.entries));
+    try {
+      localStorage.setItem(KEY, JSON.stringify(this.entries));
+    } catch {
+      // Continue the catch transition with an in-memory collection when storage is unavailable.
+    }
   }
 }

@@ -13,6 +13,8 @@ const MAX_DROP = 3;
 const REGROW_TIME = 45;
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
+type Shake = { kind: 'resting' } | { kind: 'beforeDrop' | 'afterDrop'; elapsed: number };
+
 /** A fruit tree: shake it to knock down 1–3 mangoes, which regrow slowly. */
 export class FruitTree implements Interactable {
   readonly position: THREE.Vector3;
@@ -22,7 +24,8 @@ export class FruitTree implements Interactable {
   /** Original fruit instance matrices, used to hide and restore them. */
   private rest: THREE.Matrix4[] = [];
   private hanging: boolean[] = [];
-  private shakeT = -1;
+  private shake: Shake = { kind: 'resting' };
+  private count = 0;
   private pendingDrops = 0;
   private regrow = 0;
   private pickups: Pickups | null = null;
@@ -36,6 +39,7 @@ export class FruitTree implements Interactable {
       this.fruit.getMatrixAt(i, m);
       this.rest.push(m);
       this.hanging.push(true);
+      this.count++;
     }
   }
 
@@ -46,7 +50,7 @@ export class FruitTree implements Interactable {
 
   /** Restores the fruit and regrow timer. Without an argument, the full tree comes back. */
   setState(st?: TreeState) {
-    this.shakeT = -1;
+    this.shake = { kind: 'resting' };
     this.pendingDrops = 0;
     this.object.rotation.set(0, this.object.rotation.y, 0);
     this.regrow = st?.r ?? 0;
@@ -54,14 +58,14 @@ export class FruitTree implements Interactable {
   }
 
   prompt(): string | null {
-    if (this.shakeT >= 0) return null;
+    if (this.shake.kind !== 'resting') return null;
     return this.hangingCount() > 0 ? t('prompt.shake') : null;
   }
 
   interact(ctx: InteractContext) {
-    if (this.shakeT >= 0 || this.hangingCount() === 0) return;
+    if (this.shake.kind !== 'resting' || this.hangingCount() === 0) return;
     this.pickups = ctx.pickups;
-    this.shakeT = 0;
+    this.shake = { kind: 'beforeDrop', elapsed: 0 };
     sfx.play('rustle', { at: this.position });
     this.pendingDrops = 1 + Math.floor(Math.random() * MAX_DROP);
   }
@@ -82,18 +86,20 @@ export class FruitTree implements Interactable {
 
   /** Damped sine wobble around the trunk base; fruit drops at DROP_AT. */
   private updateShake(dt: number) {
-    if (this.shakeT < 0) return;
-    const prev = this.shakeT;
-    this.shakeT += dt;
-    const t = Math.min(this.shakeT, SHAKE_TIME);
+    if (this.shake.kind === 'resting') return;
+    this.shake.elapsed += dt;
+    const t = Math.min(this.shake.elapsed, SHAKE_TIME);
     const env = Math.exp(-t * 3);
     const w = Math.PI * 2 * 3.5;
     this.object.rotation.z = Math.sin(t * w) * 0.07 * env;
     this.object.rotation.x = Math.sin(t * w * 0.9 + 1) * 0.04 * env;
 
-    if (prev < DROP_AT && this.shakeT >= DROP_AT) this.dropFruit();
-    if (this.shakeT >= SHAKE_TIME) {
-      this.shakeT = -1;
+    if (this.shake.kind === 'beforeDrop' && this.shake.elapsed >= DROP_AT) {
+      this.dropFruit();
+      this.shake.kind = 'afterDrop';
+    }
+    if (this.shake.elapsed >= SHAKE_TIME) {
+      this.shake = { kind: 'resting' };
       this.object.rotation.set(0, this.object.rotation.y, 0);
     }
   }
@@ -113,6 +119,7 @@ export class FruitTree implements Interactable {
   }
 
   private setHanging(i: number, on: boolean) {
+    if (this.hanging[i] !== on) this.count += on ? 1 : -1;
     this.hanging[i] = on;
     this.fruit.setMatrixAt(i, on ? this.rest[i] : HIDDEN);
     this.fruit.instanceMatrix.needsUpdate = true;
@@ -125,6 +132,6 @@ export class FruitTree implements Interactable {
   }
 
   private hangingCount() {
-    return this.hanging.filter(Boolean).length;
+    return this.count;
   }
 }

@@ -238,6 +238,7 @@ export class FrameMonitor {
 
   /** Stops measuring for a while: after an island shift or a tier change. */
   pause(seconds: number) {
+    this.bad = 0;
     this.quietUntil = Math.max(this.quietUntil, this.clock + seconds);
     this.resetWindow();
   }

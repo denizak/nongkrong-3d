@@ -101,6 +101,12 @@ export class PaddyField implements Interactable {
   private ripeMix!: Float32Array;
   private state!: Uint8Array;
   private target = -1;
+  private cells = new Map<string, number[]>();
+  private bending = new Set<number>();
+  private growing = new Set<number>();
+  private nearby: number[] = [];
+  private activeSprings = new Set<number>();
+  private readonly facing = new THREE.Vector3();
   private puffs: Puff[] = [];
   private matrixDirty = false;
   private colorDirty = false;
@@ -148,6 +154,14 @@ export class PaddyField implements Interactable {
       this.ripeMix[i] = rand();
     });
 
+    for (let i = 0; i < n; i++) {
+      const key = this.cellKey(this.bx[i], this.bz[i]);
+      const cell = this.cells.get(key) ?? [];
+      if (!this.cells.has(key)) this.cells.set(key, cell);
+      cell.push(i);
+      if (this.state[i] !== RIPE) this.growing.add(i);
+    }
+
     // Tinted by instance colour, so the model's own part colours are replaced with white.
     for (const part of deps.assets.crops_wheatStageB.parts) {
       const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9, metalness: 0, flatShading: true });
@@ -176,8 +190,8 @@ export class PaddyField implements Interactable {
 
   /** Restores stalk states and timers. Without an argument, the fresh layout comes back. */
   setState(st?: PaddyState) {
-    const s = st ?? this.fresh;
-    if (s.s.length !== this.n) return;
+    // Density changes alter instance counts. Never keep the previous island's live state.
+    const s = st?.s.length === this.n ? st : this.fresh;
     this.state.set(s.s);
     this.timer.set(s.t);
     this.hf.set(s.f);
@@ -186,7 +200,10 @@ export class PaddyField implements Interactable {
     this.dirX.fill(1);
     this.dirZ.fill(0);
     this.target = -1;
+    this.bending.clear();
+    this.growing.clear();
     for (let i = 0; i < this.n; i++) {
+      if (this.state[i] !== RIPE) this.growing.add(i);
       this.write(i);
       this.paint(i);
     }
@@ -211,9 +228,9 @@ export class PaddyField implements Interactable {
     if (this.target < 0) return;
     const { player, inventory } = this.deps;
     const p = player.position;
-    const f = player.getFacing();
+    const f = player.getFacing(this.facing);
     const hits: { i: number; d: number }[] = [];
-    for (let i = 0; i < this.n; i++) {
+    for (const i of this.near(p.x, p.z, HARVEST_RANGE)) {
       if (this.state[i] !== RIPE) continue;
       const dx = this.bx[i] - p.x;
       const dz = this.bz[i] - p.z;
@@ -231,6 +248,7 @@ export class PaddyField implements Interactable {
     let cz = 0;
     for (const { i } of hits.slice(0, n)) {
       this.state[i] = STUB;
+      this.growing.add(i);
       this.timer[i] = 0;
       this.hf[i] = STUBBLE_H;
       this.write(i);
@@ -251,14 +269,19 @@ export class PaddyField implements Interactable {
   update(dt: number) {
     const { player } = this.deps;
     const p = player.position;
-    const f = player.getFacing();
+    const f = player.getFacing(this.facing);
     let best = -1;
     let bestD = Infinity;
 
-    for (let i = 0; i < this.n; i++) {
+    // Only nearby stalks and springs still settling need distance/spring work.
+    const active = this.activeSprings;
+    active.clear();
+    for (const i of this.bending) active.add(i);
+    for (const i of this.near(p.x, p.z, HARVEST_RANGE)) active.add(i);
+    for (const i of active) {
       const dx = this.bx[i] - p.x;
       const dz = this.bz[i] - p.z;
-      const d = Math.hypot(dx, dz);
+      const d = Math.sqrt(dx * dx + dz * dz);
       const inFront = d < 0.01 || (dx * f.x + dz * f.z) / d > FACING_MIN;
 
       // Stalks near the player lean away from it, more the closer they are.
@@ -283,6 +306,8 @@ export class PaddyField implements Interactable {
         nt = 0;
         nv = 0;
       }
+      if (nt === 0 && nv === 0) this.bending.delete(i);
+      else this.bending.add(i);
       if (nt !== tilt || nv !== vel) {
         this.tilt[i] = nt;
         this.vel[i] = nv;
@@ -293,13 +318,16 @@ export class PaddyField implements Interactable {
         best = i;
         bestD = d;
       }
+    }
 
+    for (const i of this.growing) {
       // Growth: stubble grows back to green, then green ripens to gold.
       const s = this.state[i];
       if (s === YOUNG) {
         this.timer[i] += dt;
         if (this.timer[i] >= REGROW_TIME) {
           this.state[i] = RIPE;
+          this.growing.delete(i);
           this.timer[i] = 0;
           this.paint(i);
         }
@@ -321,6 +349,22 @@ export class PaddyField implements Interactable {
     if (best >= 0) this.position.set(this.bx[best], this.by[best], this.bz[best]);
     this.updatePuffs(dt);
     this.flush();
+  }
+
+  private cellKey(x: number, z: number) {
+    return `${Math.floor(x / HARVEST_RANGE)},${Math.floor(z / HARVEST_RANGE)}`;
+  }
+
+  /** Broad phase only; callers retain their exact distance and facing tests. */
+  private near(x: number, z: number, range: number): number[] {
+    this.nearby.length = 0;
+    for (let cx = Math.floor((x - range) / HARVEST_RANGE); cx <= Math.floor((x + range) / HARVEST_RANGE); cx++) {
+      for (let cz = Math.floor((z - range) / HARVEST_RANGE); cz <= Math.floor((z + range) / HARVEST_RANGE); cz++) {
+        const cell = this.cells.get(`${cx},${cz}`);
+        if (cell) for (const i of cell) this.nearby.push(i);
+      }
+    }
+    return this.nearby;
   }
 
   /** Writes stalk i's transform: base position, yaw, a tilt about its base, and the stubble height. */

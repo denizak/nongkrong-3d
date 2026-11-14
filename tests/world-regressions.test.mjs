@@ -2,7 +2,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'vite';
 
-const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const vite = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
 after(() => vite.close());
 const { Player } = await vite.ssrLoadModule('/src/player/Player.ts');
 const { Environment } = await vite.ssrLoadModule('/src/world/Environment.ts');

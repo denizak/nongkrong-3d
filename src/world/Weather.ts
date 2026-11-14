@@ -20,6 +20,8 @@ const STORM_HOURS: [number, number] = [1, 3];
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const wrap = (v: number, m: number) => ((v % m) + m) % m;
 
+type RainSchedule = { kind: 'dry' } | { kind: 'storm'; hoursLeft: number } | { kind: 'forced' };
+
 interface Ripple {
   mesh: THREE.Mesh;
   mat: THREE.MeshBasicMaterial;
@@ -35,9 +37,7 @@ interface Ripple {
 export class Weather {
   /** 0 dry, 1 full rain. Fades in and out over about 20 s. */
   rainAmount = 0;
-  private target = false;
-  /** Game hours of rain left; Infinity when forced on by setRain(true). */
-  private hoursLeft = 0;
+  private schedule: RainSchedule = { kind: 'dry' };
   private untilRoll = rand(ROLL_EVERY[0], ROLL_EVERY[1]);
 
   private streaks: THREE.InstancedMesh;
@@ -79,7 +79,7 @@ export class Weather {
 
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'KeyR' || e.repeat || isTyping()) return;
-      this.setRain(!this.target);
+      this.setRain(!this.raining);
     });
   }
 
@@ -90,13 +90,12 @@ export class Weather {
 
   /** True while a storm is on (the fade may still be in progress). */
   get raining(): boolean {
-    return this.target;
+    return this.schedule.kind !== 'dry';
   }
 
   /** Forces rain on (until switched off) or off. Automatic rolls resume once it is off. */
   setRain(on: boolean) {
-    this.target = on;
-    this.hoursLeft = on ? Infinity : 0;
+    this.schedule = on ? { kind: 'forced' } : { kind: 'dry' };
   }
 
   /** Per-frame update. `hours` is the game time that passed this frame (DayNight.hoursThisFrame). */
@@ -104,7 +103,7 @@ export class Weather {
     this.updateSchedule(hours);
 
     const step = dt / FADE_SECONDS;
-    const goal = this.target ? 1 : 0;
+    const goal = this.raining ? 1 : 0;
     this.rainAmount = goal > this.rainAmount
       ? Math.min(goal, this.rainAmount + step)
       : Math.max(goal, this.rainAmount - step);
@@ -124,18 +123,17 @@ export class Weather {
   }
 
   private updateSchedule(hours: number) {
-    if (!this.target) {
+    if (this.schedule.kind === 'dry') {
       this.untilRoll -= hours;
       if (this.untilRoll <= 0) {
         this.untilRoll = rand(ROLL_EVERY[0], ROLL_EVERY[1]);
         if (Math.random() < ROLL_CHANCE) {
-          this.target = true;
-          this.hoursLeft = rand(STORM_HOURS[0], STORM_HOURS[1]);
+          this.schedule = { kind: 'storm', hoursLeft: rand(STORM_HOURS[0], STORM_HOURS[1]) };
         }
       }
-    } else if (this.hoursLeft !== Infinity) {
-      this.hoursLeft -= hours;
-      if (this.hoursLeft <= 0) this.target = false;
+    } else if (this.schedule.kind === 'storm') {
+      this.schedule.hoursLeft -= hours;
+      if (this.schedule.hoursLeft <= 0) this.schedule = { kind: 'dry' };
     }
   }
 

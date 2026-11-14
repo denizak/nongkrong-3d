@@ -6,6 +6,7 @@ const NO_MOVE = { x: 0, y: 0 };
 export class Input {
   private keys = new Set<string>();
   private _typing = false;
+  private focused = true;
   /** Accumulated pointer drag (pixels) since last frame. */
   private dragX = 0;
   private dragY = 0;
@@ -24,13 +25,14 @@ export class Input {
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       // While typing in the chat box, game keys are ignored entirely.
-      if (this._typing) return;
+      if (this._typing || !this.focused) return;
       this.keys.add(e.code);
       const action = KEY_ACTIONS[e.code];
       if (action && !e.repeat) this.queued[action] = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.focused = false; this.reset(); });
+    window.addEventListener('focus', () => { this.focused = true; this.reset(); });
 
     target.addEventListener('pointerdown', (e) => {
       if (this.touchMode && e.pointerType === 'touch') return;
@@ -41,6 +43,8 @@ export class Input {
       this.dragging = false;
       target.releasePointerCapture(e.pointerId);
     });
+    target.addEventListener('pointercancel', () => { this.dragging = false; });
+    target.addEventListener('lostpointercapture', () => { this.dragging = false; });
     target.addEventListener('pointermove', (e) => {
       if (!this.dragging || (this.touchMode && e.pointerType === 'touch')) return;
       this.dragX += e.movementX;
@@ -54,6 +58,18 @@ export class Input {
       },
       { passive: false },
     );
+  }
+
+  /** Focus loss cancels held and queued input, including an unfinished touch gesture. */
+  private reset() {
+    this.keys.clear();
+    this.queued = { interact: false, sit: false, lie: false };
+    const pad = this.gamepad();
+    this.padWas = { interact: !!pad?.buttons[2]?.pressed, sit: !!pad?.buttons[1]?.pressed, lie: !!pad?.buttons[3]?.pressed };
+    this.dragging = false;
+    this.dragX = this.dragY = this.wheel = 0;
+    this.touchX = this.touchY = 0;
+    this.touchRun = false;
   }
 
   /**
@@ -88,20 +104,20 @@ export class Input {
 
   /** Camera orbit from touch, in drag pixels (same units as a mouse drag). */
   addLook(dx: number, dy: number) {
-    if (this._typing) return;
+    if (this._typing || !this.focused) return;
     this.dragX += dx;
     this.dragY += dy;
   }
 
   /** Zoom from touch, in wheel units (positive zooms out). */
   addZoom(dz: number) {
-    if (this._typing) return;
+    if (this._typing || !this.focused) return;
     this.wheel += dz;
   }
 
   /** Queues an action press exactly as if its key had been pressed. */
   queuePress(action: Action) {
-    if (!this._typing) this.queued[action] = true;
+    if (!this._typing && this.focused) this.queued[action] = true;
   }
 
   pressInteract() {
@@ -128,7 +144,7 @@ export class Input {
 
   /** Movement intent: x = right, y = forward, each in [-1, 1]. */
   move(): { x: number; y: number } {
-    if (this._typing) return NO_MOVE;
+    if (this._typing || !this.focused) return NO_MOVE;
     let x = 0;
     let y = 0;
     if (this.down('KeyW', 'ArrowUp')) y += 1;
@@ -149,7 +165,7 @@ export class Input {
   }
 
   running(): boolean {
-    if (this._typing) return false;
+    if (this._typing || !this.focused) return false;
     const pad = this.gamepad();
     return this.down('ShiftLeft', 'ShiftRight') || this.touchRun || !!pad?.buttons[0]?.pressed;
   }
@@ -170,7 +186,7 @@ export class Input {
   }
 
   private take(action: Action, button: number): boolean {
-    if (this._typing) return false;
+    if (this._typing || !this.focused) return false;
     const key = this.queued[action];
     this.queued[action] = false;
     const now = !!this.gamepad()?.buttons[button]?.pressed;
@@ -181,7 +197,7 @@ export class Input {
 
   /** Camera orbit delta for this frame (radians-ish units), then resets. */
   consumeLook(): { x: number; y: number; zoom: number } {
-    if (this._typing) {
+    if (this._typing || !this.focused) {
       this.dragX = this.dragY = this.wheel = 0;
       return { x: 0, y: 0, zoom: 0 };
     }

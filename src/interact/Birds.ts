@@ -29,6 +29,7 @@ interface Bird {
   turnAt: number;
   hopAt: number;
   stayLeft: number;
+  arriving: boolean;
   vel: THREE.Vector3;
   phase: number;
 }
@@ -93,6 +94,7 @@ export class Birds {
       this.scene.add(bird.root);
       this.birds.push(bird);
       this.start(bird, this.spot(), 4 + Math.random() * 1.5, 12);
+      bird.arriving = true;
     }
     return n;
   }
@@ -122,6 +124,11 @@ export class Birds {
     for (let k = this.birds.length - 1; k >= 0; k--) {
       const b = this.birds[k];
       b.t += dt;
+      // The visit deadline runs across hops rather than restarting on every landing.
+      if (!b.arriving && b.state !== 'flee') {
+        b.stayLeft -= dt;
+        if (b.stayLeft <= 0) this.takeOff(b, this.outward(b.root.position));
+      }
       if (b.state === 'move') this.moveBird(b, dt);
       else if (b.state === 'perch') this.perchBird(b, dt);
       else if (this.fleeBird(b, dt)) {
@@ -159,7 +166,7 @@ export class Birds {
       root, body, head, wingL, wingR,
       state: 'perch', t: 0, dur: 1,
       from: new THREE.Vector3(), ctrl: new THREE.Vector3(), to: new THREE.Vector3(),
-      yaw, targetYaw: yaw, turnAt: 0, hopAt: 0, stayLeft: 0,
+      yaw, targetYaw: yaw, turnAt: 0, hopAt: 0, stayLeft: 0, arriving: false,
       vel: new THREE.Vector3(), phase: Math.random() * TAU,
     };
   }
@@ -214,18 +221,14 @@ export class Birds {
     if (u >= 1) {
       b.state = 'perch';
       sfx.play('chirp', { at: b.root.position, volume: 0.35 });
-      b.stayLeft = 25 + Math.random() * 20;
+      if (b.arriving) b.stayLeft = 25 + Math.random() * 20;
+      b.arriving = false;
       b.turnAt = 1 + Math.random() * 2;
       b.hopAt = 3 + Math.random() * 4;
     }
   }
 
   private perchBird(b: Bird, dt: number) {
-    b.stayLeft -= dt;
-    if (b.stayLeft <= 0) {
-      this.takeOff(b, this.outward(b.root.position));
-      return;
-    }
     b.turnAt -= dt;
     if (b.turnAt <= 0) {
       b.targetYaw = Math.random() * TAU;

@@ -43,7 +43,11 @@ export class Inventory {
   }
 
   private save() {
-    localStorage.setItem(KEY, JSON.stringify(this.counts));
+    try {
+      localStorage.setItem(KEY, JSON.stringify(this.counts));
+    } catch {
+      // Collection still succeeds in memory when persistence is unavailable.
+    }
   }
 
   private render() {

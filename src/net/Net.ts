@@ -48,7 +48,7 @@ const WATCH_MS = 500;
 
 /**
  * 'connecting': joining, no relay open yet. 'online': at least one relay open (peers may or may not be connected).
- * 'offline': joining threw, or no relay opened in time.
+ * 'offline': joining threw, or all relays stayed closed for the timeout. Existing peers may still be connected.
  */
 export type NetStatus = 'off' | 'connecting' | 'online' | 'offline';
 export type PoseCode = 0 | 1 | 2;
@@ -220,8 +220,8 @@ export class Net {
   onChange: (() => void) | null = null;
   /** Called with a validated, rate-limited chat message from a peer. */
   onChat: ((peerId: string, text: string) => void) | null = null;
-  /** Called with each joined Trystero room (again after a rejoin). Voice chat attaches here. */
-  onRoom: ((room: Room) => void) | null = null;
+  /** Called with each joined room, and null before leaving it. Voice owns resources for this attachment. */
+  onRoom: ((room: Room | null) => void) | null = null;
 
   private room: Room | null = null;
   private peerId = '';
@@ -235,7 +235,9 @@ export class Net {
   private fakeCount = 0;
   private lastMe: NetSelf | null = null;
   private started = false;
-  private retried = false;
+  private retrying = false;
+  private generation = 0;
+  private relayLostAt: number | null = null;
   private sockets: () => Record<string, WebSocket> = () => ({});
   private startedAt = 0;
   private watchTimer = 0;
@@ -319,13 +321,17 @@ export class Net {
   async start(): Promise<void> {
     if (this.started || this.solo) return;
     this.started = true;
+    const generation = ++this.generation;
+    const current = () => generation === this.generation;
     this.setStatus('connecting');
     try {
       const t = await import('trystero');
+      if (!current()) return;
       this.sockets = () => t.getRelaySockets();
       const turn = turnServers();
       // Public: the fixed id and no password, as before. Private: a hashed id and a key derived from the secret.
       const priv = this.secret ? await deriveRoom(this.secret) : null;
+      if (!current()) return;
       const config: JoinRoomConfig = {
         appId: APP_ID,
         relayConfig: { urls: RELAY_URLS },
@@ -333,7 +339,7 @@ export class Net {
         ...(turn ? { turnConfig: turn } : {}),
       };
       const room = t.joinRoom(config, priv?.roomId ?? ROOM_ID, {
-        onJoinError: (e) => this.onJoinError(e),
+        onJoinError: (e) => { if (current()) this.onJoinError(e); },
       });
       this.room = room;
       this.peerId = t.selfId;
@@ -341,15 +347,17 @@ export class Net {
       this.st = room.makeAction<StateMsg>('st');
       this.hi = room.makeAction<HiMsg>('hi');
       this.ch = room.makeAction<ChatMsg>('ch');
-      this.st.onMessage = (data, ctx) => this.onState(ctx.peerId, data);
-      this.hi.onMessage = (data, ctx) => this.onHi(ctx.peerId, data);
-      this.ch.onMessage = (data, ctx) => this.onChatMsg(ctx.peerId, data);
-      room.onPeerJoin = (id) => this.onJoin(id);
-      room.onPeerLeave = (id) => this.onLeave(id);
+      this.st.onMessage = (data, ctx) => { if (current()) this.onState(ctx.peerId, data); };
+      this.hi.onMessage = (data, ctx) => { if (current()) this.onHi(ctx.peerId, data); };
+      this.ch.onMessage = (data, ctx) => { if (current()) this.onChatMsg(ctx.peerId, data); };
+      room.onPeerJoin = (id) => { if (current()) this.onJoin(id); };
+      room.onPeerLeave = (id) => { if (current()) this.onLeave(id); };
       window.addEventListener('pagehide', () => void room.leave().catch(() => {}), { once: true });
       this.startedAt = performance.now();
+      this.relayLostAt = null;
       this.startWatch();
     } catch (err) {
+      if (!current()) return;
       console.warn('Multiplayer unavailable, playing offline.', err);
       this.setStatus('offline');
     }
@@ -366,7 +374,7 @@ export class Net {
     return RELAY_URLS.map((url) => ({ url, open: socks[url]?.readyState === WebSocket.OPEN }));
   }
 
-  /** Polls the relays: 'online' once any is open, 'offline' if none opened within the timeout. */
+  /** Poll discovery independently of peers, allowing a grace period after continuous relay loss. */
   private startWatch() {
     window.clearInterval(this.watchTimer);
     this.watchTimer = window.setInterval(() => this.checkRelays(), WATCH_MS);
@@ -374,10 +382,18 @@ export class Net {
   }
 
   private checkRelays() {
+    const now = performance.now();
     const anyOpen = this.relayStates().some((r) => r.open);
-    if (anyOpen && this.status !== 'online') {
-      this.setStatus('online');
-    } else if (!anyOpen && this.status === 'connecting' && performance.now() - this.startedAt >= RELAY_TIMEOUT_MS) {
+    if (anyOpen) {
+      this.relayLostAt = null;
+      if (this.status !== 'online') this.setStatus('online');
+      return;
+    }
+    if (this.status === 'online') {
+      this.relayLostAt = now;
+      this.setStatus('connecting');
+    }
+    if (this.status === 'connecting' && now - (this.relayLostAt ?? this.startedAt) >= RELAY_TIMEOUT_MS) {
       this.setStatus('offline');
     }
   }
@@ -393,19 +409,29 @@ export class Net {
     this.notify();
   }
 
-  /** The browser came back online after we gave up: try joining again, once. */
+  /** Rejoin after each offline period; overlapping online events share one retry. */
   private async onNetworkBack() {
-    if (this.status !== 'offline' || this.retried) return;
-    this.retried = true;
-    if (this.room) await this.room.leave().catch(() => {});
+    if (this.status !== 'offline' || this.retrying) return;
+    this.retrying = true;
+    // Invalidate old callbacks and stop polling before the asynchronous leave.
+    ++this.generation;
+    window.clearInterval(this.watchTimer);
+    const old = this.room;
+    this.onRoom?.(null);
     this.room = null;
     this.st = null;
     this.hi = null;
     this.ch = null;
     this.remotes.clear();
     this.failedPeers.clear();
-    this.started = false;
-    await this.start();
+    this.notify();
+    try {
+      if (old) await old.leave().catch(() => {});
+      this.started = false;
+      await this.start();
+    } finally {
+      this.retrying = false;
+    }
   }
 
   /** Sets the display name (trimmed, max 20). Returns the accepted name, or null if it is empty. */
@@ -525,7 +551,6 @@ export class Net {
   private onJoin(id: string) {
     if (!this.remotes.has(id)) this.remotes.set(id, newPeer(id, t('net.friend'), DEFAULT_LOOK));
     this.failedPeers.delete(id);
-    if (this.status !== 'online') this.setStatus('online');
     this.hi?.send(this.hiPayload(), { target: id }).catch(() => {});
     this.notify();
   }

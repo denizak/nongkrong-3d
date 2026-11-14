@@ -43,6 +43,7 @@ export class FullMap {
   private cssW = 0;
   private cssH = 0;
   private staticKey = -1;
+  private shapesReady = false;
   private hits: Hit[] = [];
   /** Islands whose names were left off the map for crowding: hovering their centre shows the name. */
   private hiddenNames: Hit[] = [];
@@ -135,7 +136,7 @@ export class FullMap {
   /** Call once per frame. Does nothing while the map is closed. */
   update() {
     if (!this.opened) return;
-    if (this.staticKey !== this.world.arch.visited.size) this.rebuildStatic();
+    if (this.staticKey !== this.world.arch.visited.size || this.shapesReady !== this.shapes.ready) this.rebuildStatic();
     this.drawFrame();
   }
 
@@ -166,6 +167,7 @@ export class FullMap {
     const g = this.stat.getContext('2d')!;
     const visited = this.world.arch.visited;
     this.staticKey = visited.size;
+    this.shapesReady = this.shapes.ready;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.cssW, this.cssH);
     g.fillStyle = SEA;

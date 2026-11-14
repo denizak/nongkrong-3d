@@ -73,6 +73,7 @@ export class TouchControls {
     window.addEventListener('pointermove', this.onMove);
     window.addEventListener('pointerup', this.onUp);
     window.addEventListener('pointercancel', this.onUp);
+    window.addEventListener('blur', () => this.cancelTouches());
 
     // Lift the chat box above the on-screen keyboard when it opens.
     const vv = window.visualViewport;
@@ -84,6 +85,14 @@ export class TouchControls {
     };
     vv?.addEventListener('resize', lift);
     vv?.addEventListener('scroll', lift);
+  }
+
+  private cancelTouches() {
+    this.tracked.clear();
+    this.stickId = -1;
+    this.pinchDist = 0;
+    this.stickBase.classList.remove('show');
+    this.input.setTouchMove(0, 0, false);
   }
 
   /** True on coarse-pointer or touch-capable devices, or when the URL has ?touch. */

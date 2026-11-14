@@ -56,6 +56,7 @@ export class Fishing {
   private reelFrom = new THREE.Vector3();
   private dip = 0;
   private tilt = 0;
+  private readonly facing = new THREE.Vector3();
 
   // Fish shadow: swims in along a lazy curve, then circles the bobber.
   private swimFrom = new THREE.Vector3();
@@ -161,6 +162,10 @@ export class Fishing {
   }
 
   cast(target: THREE.Vector3, water: WaterKind) {
+    if (this.active) return;
+    // Idle ticks skip the rod transforms; resolve the current hand pose on demand.
+    this.tilt = 0;
+    this.updateRod(0);
     this.target.copy(target);
     this.water = water;
     this.castFrom.copy(this.tip);
@@ -234,12 +239,13 @@ export class Fishing {
         break;
     }
 
+    this.updateSplashes(dt);
+    this.updateBang();
+    if (!this.active) return;
     this.updateShadow(dt);
     this.updateBobber(dt);
     this.updateRod(dt);
     this.updateLine();
-    this.updateSplashes(dt);
-    this.updateBang();
   }
 
   private enterWaiting() {
@@ -284,7 +290,7 @@ export class Fishing {
   }
 
   /** Starts the reel-in phase: the bobber flies back to the rod tip, then the state goes idle. */
-  private beginReel(state: FishState, duration: number) {
+  private beginReel(state: 'caught' | 'escaped' | 'reel', duration: number) {
     this.state = state;
     this.timer = duration;
     this.resultTotal = duration;
@@ -380,7 +386,7 @@ export class Fishing {
     let angle = REST_ANGLE + (CAST_ANGLE - REST_ANGLE) * this.tilt;
     if (this.state === 'bite') angle += Math.sin(this.time * 40) * 0.05;
 
-    const f = player.getFacing();
+    const f = player.getFacing(this.facing);
     if (hand) {
       hand.getWorldPosition(_hand);
     } else {

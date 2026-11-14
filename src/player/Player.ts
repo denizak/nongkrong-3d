@@ -32,6 +32,7 @@ export class Player {
   private heading = 0;
   private bobPhase = 0;
   private speed = 0;
+  private readonly moveDir = new THREE.Vector3();
   private vy = 0;
   private _pose: Pose = 'stand';
   private sitAmt = 0;
@@ -110,7 +111,7 @@ export class Player {
     if (this._pose !== 'stand' && Math.hypot(move.x, move.y) > 0.01) this.setPose('stand');
     const posed = this._pose !== 'stand';
 
-    const dir = new THREE.Vector3()
+    const dir = this.moveDir.set(0, 0, 0)
       .addScaledVector(basis.forward, move.y)
       .addScaledVector(basis.right, move.x);
     const amount = posed ? 0 : Math.min(1, dir.length());
@@ -212,8 +213,8 @@ export class Player {
   }
 
   /** Horizontal unit vector the character faces. */
-  getFacing(): THREE.Vector3 {
-    return new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+  getFacing(out = new THREE.Vector3()): THREE.Vector3 {
+    return out.set(Math.sin(this.heading), 0, Math.cos(this.heading));
   }
 
   /** Copies the physics result back to the visual position (feet at the ground). */

@@ -41,6 +41,9 @@ const MIC: MediaStreamConstraints = {
 
 type Mode = 'hold' | 'open';
 type MicState = 'idle' | 'talking' | 'blocked';
+type Microphone =
+  | { kind: 'released' | 'acquiring' | 'blocked' | 'disabled' }
+  | { kind: 'ready' | 'talking'; stream: MediaStream };
 
 interface Settings {
   mode: Mode;
@@ -140,14 +143,19 @@ export class Voice {
   private bus: GainNode | null = null;
 
   /** My microphone, or null when released. Its track is enabled only while talking. */
-  private stream: MediaStream | null = null;
-  private acquiring = false;
-  private blocked = false;
+  private mic: Microphone = { kind: 'released' };
+  private get stream(): MediaStream | null {
+    return 'stream' in this.mic ? this.mic.stream : null;
+  }
+  private get acquiring() { return this.mic.kind === 'acquiring'; }
+  private get blocked() { return this.mic.kind === 'blocked'; }
+  private get talking() { return this.mic.kind === 'talking'; }
   /** The player is holding V or the mic button (or toggled open mic on). */
   private wantTalk = false;
-  private talking = false;
   /** Peers my stream is currently added to. */
   private sending = new Set<string>();
+  /** Pending adds retain ownership through cancellation until late completion can be compensated. */
+  private sendAttempts = new Map<string, object>();
   private clock = 0;
   private lastTalkEnd = 0;
   private lastVcSent = 0;
@@ -190,9 +198,9 @@ export class Voice {
     this.say = deps.say;
     const hasAudio = typeof (window.AudioContext ?? (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext) === 'function';
     this.enabled = typeof RTCPeerConnection !== 'undefined' && hasAudio;
-    if (!this.enabled) return;
+    if (!this.enabled) { this.mic = { kind: 'disabled' }; return; }
     try {
-      if (!navigator.mediaDevices?.getUserMedia) this.blocked = true;
+      if (!navigator.mediaDevices?.getUserMedia) this.mic = { kind: 'blocked' };
       this.buildUi();
       this.audio.onUnlock(() => this.onAudio());
       window.addEventListener('keydown', this.onKeyDown);
@@ -391,23 +399,25 @@ export class Voice {
       this.setBlocked();
       return;
     }
-    this.acquiring = true;
+    const request: Microphone = { kind: 'acquiring' };
+    this.mic = request;
     let req: Promise<MediaStream>;
     try {
       req = md.getUserMedia(MIC);
     } catch {
-      this.acquiring = false;
       this.setBlocked();
       return;
     }
     req.then(
       (s) => {
-        this.acquiring = false;
-        if (!this.enabled) {
+        if (!this.enabled || this.mic !== request) {
           for (const tr of s.getTracks()) tr.stop();
           return;
         }
-        this.stream = s;
+        this.mic = { kind: 'ready', stream: s };
+        for (const tr of s.getAudioTracks()) tr.addEventListener('ended', () => {
+          if (this.stream === s) { this.wantTalk = false; this.stopMic(); }
+        });
         for (const tr of s.getAudioTracks()) tr.enabled = false;
         this.lastTalkEnd = this.clock;
         this.syncSend();
@@ -415,17 +425,16 @@ export class Voice {
         this.refresh();
       },
       () => {
-        this.acquiring = false;
-        this.setBlocked();
+        if (this.enabled && this.mic === request) this.setBlocked();
       },
     );
   }
 
   private setBlocked() {
     if (!this.blocked) this.say(t('voice.blockedToast'));
-    this.blocked = true;
     this.wantTalk = false;
-    this.setTalking(false);
+    this.stopMic();
+    this.mic = { kind: 'blocked' };
     this.refresh();
   }
 
@@ -433,8 +442,8 @@ export class Voice {
   private stopMic() {
     const s = this.stream;
     if (!s) return;
-    this.stream = null;
     this.setTalking(false);
+    this.mic = { kind: 'released' };
     if (this.room && this.sending.size > 0) {
       try {
         this.room.removeStream(s, { target: [...this.sending] });
@@ -443,16 +452,18 @@ export class Voice {
       }
     }
     this.sending.clear();
+    this.sendAttempts.clear();
     for (const tr of s.getTracks()) tr.stop();
     this.refresh();
   }
 
   private setTalking(on: boolean) {
-    const want = on && !!this.stream && !this.blocked;
+    const stream = this.stream;
+    const want = on && this.enabled && !!stream && !this.blocked;
     const track = this.stream?.getAudioTracks()[0];
     if (track) track.enabled = want;
     if (want === this.talking) return;
-    this.talking = want;
+    if (stream) this.mic = { kind: want ? 'talking' : 'ready', stream };
     if (!want) this.lastTalkEnd = this.clock;
     this.sendVc(want);
     this.refresh();
@@ -484,6 +495,7 @@ export class Voice {
     const room = this.room;
     if (!room || !this.stream) {
       this.sending.clear();
+      this.sendAttempts.clear();
       return;
     }
     const me = this.worldMe();
@@ -497,16 +509,37 @@ export class Voice {
     }
     const cap = quality.tier === 'low' ? VOICE_CAP_LOW : VOICE_CAP;
     const want = selectAudioPeers(dists, this.sending, cap);
-    const add = [...want].filter((id) => !this.sending.has(id));
+    const add = [...want].filter((id) => !this.sending.has(id) && !this.sendAttempts.has(id));
     const drop = [...this.sending].filter((id) => !want.has(id));
     try {
       if (drop.length > 0) {
         room.removeStream(this.stream, { target: drop });
+        // Keep pending attempts owned until they settle: addStream awaits metadata
+        // before adding tracks, so removal now may run before the actual addition.
         for (const id of drop) this.sending.delete(id);
       }
       if (add.length > 0) {
-        for (const p of room.addStream(this.stream, { target: add })) p.catch(() => {});
-        for (const id of add) this.sending.add(id);
+        // Track each attempt independently: a rejected negotiation must be eligible for retry.
+        const stream = this.stream;
+        for (const id of add) {
+          this.sending.add(id);
+          const attempt = {};
+          this.sendAttempts.set(id, attempt);
+          const complete = (failed: boolean) => {
+            const owned = this.room === room && this.stream === stream && this.sendAttempts.get(id) === attempt;
+            // A previous room/stream may finish after detach or device release.
+            // Never let its compensation remove a newer active send of the same resource.
+            const replaced = !owned && this.room === room && this.stream === stream && this.sending.has(id);
+            if (!replaced && (failed || !owned || !this.sending.has(id))) {
+              try { room.removeStream(stream, { target: [id] }); } catch { /* Old room may already be closed. */ }
+            }
+            if (owned) {
+              this.sendAttempts.delete(id);
+              if (failed) this.sending.delete(id);
+            }
+          };
+          Promise.all(room.addStream(stream, { target: [id] })).then(() => complete(false), () => complete(true));
+        }
       }
     } catch {
       this.disable();
@@ -515,16 +548,19 @@ export class Voice {
 
   // ---- Receiving -----------------------------------------------------------
 
-  private attach(room: Room) {
+  private attach(room: Room | null) {
     if (!this.enabled) return;
     this.dropAllLinks();
     this.sending.clear();
+    this.sendAttempts.clear();
+    this.room = room;
+    this.vc = null;
+    if (!room) return;
     try {
       if (typeof room.addStream !== 'function' || typeof room.removeStream !== 'function') throw new Error('no media');
       this.vc = room.makeAction<{ s: number }>('vc');
-      this.vc.onMessage = (data, ctx) => this.onVc(ctx.peerId, data);
-      room.onPeerStream = (stream, peerId) => this.onPeerStream(stream, peerId);
-      this.room = room;
+      this.vc.onMessage = (data, ctx) => { if (this.room === room) this.onVc(ctx.peerId, data); };
+      room.onPeerStream = (stream, peerId) => { if (this.room === room) this.onPeerStream(stream, peerId); };
     } catch {
       this.disable();
     }
@@ -697,6 +733,8 @@ export class Voice {
     } catch {
       // Nothing more to release.
     }
+    this.mic = { kind: 'disabled' };
+    this.wantTalk = false;
     this.dropAllLinks();
     this.room = null;
     this.vc = null;

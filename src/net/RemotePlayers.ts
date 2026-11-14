@@ -56,7 +56,7 @@ const _pos = new THREE.Vector3();
  * Interpolates a peer's snapshots at time `t`. Each snapshot is first expressed in the frame of the newest
  * snapshot's island, so a change of island mid-buffer does not make the avatar jump.
  */
-export function sampleAt(snaps: Snapshot[], t: number): Sample | null {
+export function sampleAt(snaps: Snapshot[], t: number, out?: Sample): Sample | null {
   const n = snaps.length;
   if (n === 0) return null;
   const last = snaps[n - 1];
@@ -82,16 +82,16 @@ export function sampleAt(snaps: Snapshot[], t: number): Sample | null {
   const az = a.z + (ca.z - cb.z);
   // Shortest arc between headings.
   const dh = Math.atan2(Math.sin(b.heading - a.heading), Math.cos(b.heading - a.heading));
-  return {
-    island: b.island,
-    x: THREE.MathUtils.lerp(ax, b.x, k),
-    y: THREE.MathUtils.lerp(a.y, b.y, k),
-    z: THREE.MathUtils.lerp(az, b.z, k),
-    heading: a.heading + dh * k,
-    speed: THREE.MathUtils.lerp(a.speed, b.speed, k),
-    pose: b.pose,
-    fishing: b.fishing,
-  };
+  const result = out ?? ({} as Sample);
+  result.island = b.island;
+  result.x = THREE.MathUtils.lerp(ax, b.x, k);
+  result.y = THREE.MathUtils.lerp(a.y, b.y, k);
+  result.z = THREE.MathUtils.lerp(az, b.z, k);
+  result.heading = a.heading + dh * k;
+  result.speed = THREE.MathUtils.lerp(a.speed, b.speed, k);
+  result.pose = b.pose;
+  result.fishing = b.fishing;
+  return result;
 }
 
 /** Simple stand-in body, used only when the robot model did not load. */
@@ -118,6 +118,9 @@ function buildPlaceholder(look: Look): Placeholder {
  */
 export class RemotePlayers {
   private avatars = new Map<string, Avatar>();
+  private candidates: { peer: RemotePeer; s: Sample; x: number; z: number; d: number }[] = [];
+  private pool: { peer: RemotePeer; s: Sample; x: number; z: number; d: number }[] = [];
+  private shown = new Set<string>();
 
   /** Voice chat, or null in ?solo. Gives the speaking mark and the tap-to-mute name tags. */
   constructor(
@@ -143,28 +146,47 @@ export class RemotePlayers {
     const renderT = now - DELAY_MS;
 
     // Drop avatars whose peer left or went quiet.
-    for (const id of [...this.avatars.keys()]) {
+    for (const id of this.avatars.keys()) {
       const p = this.net.remotes.get(id);
       if (!p || p.snaps.length === 0 || now - p.lastState > STALE_MS) this.remove(id);
     }
 
     // Candidates: fresh peers in the proxy window, placed in my island frame.
-    const cands: { peer: RemotePeer; s: Sample; x: number; z: number; d: number }[] = [];
+    const cands = this.candidates;
+    cands.length = 0;
+    const cm = centreOf(me.island);
+    let used = 0;
     for (const p of this.net.remotes.values()) {
       if (p.snaps.length === 0 || now - p.lastState > STALE_MS) continue;
-      const s = sampleAt(p.snaps, renderT);
+      let c = this.pool[used];
+      if (!c) {
+        c = { peer: p, s: {} as Sample, x: 0, z: 0, d: 0 };
+        this.pool.push(c);
+      }
+      const s = sampleAt(p.snaps, renderT, c.s);
       if (!s) continue;
       if (!inProxyWindow(me.island, s.island)) continue;
       const cs = centreOf(s.island);
-      const cm = centreOf(me.island);
       const x = s.x + (cs.x - cm.x);
       const z = s.z + (cs.z - cm.z);
-      cands.push({ peer: p, s, x, z, d: Math.hypot(x - me.pos.x, z - me.pos.z) });
+      const dx = x - me.pos.x;
+      const dz = z - me.pos.z;
+      c.peer = p;
+      c.x = x;
+      c.z = z;
+      c.d = dx * dx + dz * dz;
+      // Stable insertion: ties preserve the peer iteration order.
+      let at = cands.length;
+      while (at > 0 && cands[at - 1].d > c.d) at--;
+      if (at < MAX_RENDER) {
+        used++;
+        cands.splice(at, 0, c);
+        if (cands.length > MAX_RENDER) cands.pop();
+      }
     }
-    cands.sort((a, b) => a.d - b.d);
-
-    const shown = new Set<string>();
-    for (const c of cands.slice(0, MAX_RENDER)) {
+    const shown = this.shown;
+    shown.clear();
+    for (const c of cands) {
       const av = this.ensure(c.peer);
       shown.add(c.peer.id);
       this.place(av, c.s, c.x, c.z, dt, camera, me.island);

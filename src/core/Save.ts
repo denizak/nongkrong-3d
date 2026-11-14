@@ -85,7 +85,7 @@ export class Save {
 
   /** Clears the save, all island progress, and moves the player and camera back to the main island's spawn. */
   reset() {
-    localStorage.removeItem(KEY);
+    try { localStorage.removeItem(KEY); } catch { /* Reset the live game even with blocked storage. */ }
     this.links.clock?.setTime(9);
     this.links.newGame();
     this.rig.yaw = 0;

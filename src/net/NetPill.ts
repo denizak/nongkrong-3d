@@ -45,7 +45,8 @@ export class NetPill {
     if (this.nameEl.textContent !== name) this.nameEl.textContent = name;
     const failed = net.online === 0 && net.failedPeers.size > 0;
     let text: string;
-    if (net.status === 'connecting') text = t('net.connecting');
+    if (net.online > 0) text = t('net.online', { online: net.online, nearby: net.nearby(this.arch.id) });
+    else if (net.status === 'connecting') text = t('net.connecting');
     else if (net.status === 'offline') text = t('net.offline');
     else if (failed) text = t('net.failed', { n: net.failedPeers.size });
     else if (net.online === 0) text = t('net.zero');

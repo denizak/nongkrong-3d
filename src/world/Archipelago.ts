@@ -129,10 +129,10 @@ export class IslandStates {
     for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
       const old = Number(key);
       const v = value as Partial<IslandState> | null;
-      if (!Number.isInteger(old) || !v || !Array.isArray(v.trees) || !v.paddy || !Array.isArray(v.paddy.s)) continue;
+      if (!Number.isInteger(old) || !validIslandState(v)) continue;
       const id = legacy ? legacyId(old) : old;
       if (id === null || !ISLANDS[id]) continue;
-      this.map.set(id, v as IslandState);
+      this.map.set(id, structuredClone(v));
     }
   }
 }
@@ -167,4 +167,18 @@ function saveVisited(set: Set<number>) {
   } catch {
     // Storage blocked: the count just won't persist.
   }
+}
+
+/** Reject partial/corrupt saves atomically; typed-array setters must never see missing arrays or NaN. */
+function validIslandState(v: unknown): v is IslandState {
+  if (!v || typeof v !== 'object') return false;
+  const { trees, paddy } = v as IslandState;
+  const nonnegative = (n: unknown) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  if (!Array.isArray(trees) || !trees.every((tree) => tree && Array.isArray(tree.h)
+    && tree.h.every((h) => h === 0 || h === 1) && nonnegative(tree.r) && tree.r <= 45)) return false;
+  if (!paddy || !Array.isArray(paddy.s) || !Array.isArray(paddy.t) || !Array.isArray(paddy.f)) return false;
+  return paddy.s.length === paddy.t.length && paddy.s.length === paddy.f.length
+    && paddy.s.every((s) => s === 0 || s === 1 || s === 2)
+    && paddy.t.every((n) => nonnegative(n) && n <= 60)
+    && paddy.f.every((n) => nonnegative(n) && n <= 1);
 }

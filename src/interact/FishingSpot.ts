@@ -34,6 +34,7 @@ export class FishingSpot implements Interactable {
   private target = new THREE.Vector3();
   private water: WaterKind = 'sea';
   private available = false;
+  private readonly facing = new THREE.Vector3();
   /** The live island's zones: its ponds decide pond or sea. */
   private zones: Zones = ZONES;
 
@@ -96,7 +97,7 @@ export class FishingSpot implements Interactable {
   private updateTarget() {
     const { player, terrain } = this.deps;
     const p = player.position;
-    const f = player.getFacing();
+    const f = player.getFacing(this.facing);
     const x = p.x + f.x * RANGE;
     const z = p.z + f.z * RANGE;
     this.target.set(x, WATER_LEVEL, z);

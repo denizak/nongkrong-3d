@@ -1,3 +1,4 @@
+import * as THREE from 'three/webgpu';
 import type { Input } from '../core/Input';
 import type { Player } from '../player/Player';
 import type { Interactable, InteractContext } from './Interactable';
@@ -9,6 +10,8 @@ const FACING_MIN = -0.2;
 export class InteractionSystem {
   /** Always active (fishing and the like). */
   private fixed: Interactable[] = [];
+  private active: Interactable[] = [];
+  private readonly facing = new THREE.Vector3();
   /** Belong to the live island: fruit trees, paddy, scarecrow. Replaced on each island switch. */
   private island: Interactable[] = [];
   private promptEl = document.getElementById('prompt')!;
@@ -21,20 +24,22 @@ export class InteractionSystem {
 
   add(item: Interactable) {
     this.fixed.push(item);
+    this.active = [...this.fixed, ...this.island];
   }
 
   /** The live island changed: its interactables replace the previous island's. */
   setActive(items: Interactable[]) {
     this.island = items;
+    this.active = [...this.fixed, ...items];
   }
 
   private get items(): Interactable[] {
-    return this.island.length ? [...this.fixed, ...this.island] : this.fixed;
+    return this.active;
   }
 
   update(dt: number) {
     const p = this.player.position;
-    const f = this.player.getFacing();
+    const f = this.player.getFacing(this.facing);
     // No prompts or interactions while sitting or lying down.
     const posed = this.player.pose !== 'stand';
     let best: Interactable | null = null;

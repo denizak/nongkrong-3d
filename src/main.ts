@@ -309,6 +309,7 @@ async function boot() {
     const next = contents[def.kind];
     // The old island's props on bridge landings come back before its colliders are switched off below.
     live.scatter.setHidden(null);
+    live.scarecrow.clearTransients();
     live = next;
     archipelago.setCurrent(id);
     contents.normal.root.visible = def.kind === 'normal';
