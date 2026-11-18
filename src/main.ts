@@ -29,6 +29,7 @@ import { Birds } from './interact/Birds';
 import { PRONE, SIT } from './player/CharacterModel';
 import { sfx, type Surface } from './audio/AudioManager';
 import { Loading } from './ui/Loading';
+import { PostFx } from './core/PostFx';
 import { Save } from './core/Save';
 import { TouchControls } from './ui/TouchControls';
 import { LookControls } from './player/LookControls';
@@ -221,6 +222,9 @@ async function boot() {
   // Touch joystick, camera drag and buttons, with the map button. Does nothing on non-touch devices.
   const touch = new TouchControls({ input, fishpedia, chat, map: fullMap, voice });
 
+  // Ambient occlusion on the High tier only. ?ao=0 turns it off for comparisons.
+  const post = new PostFx(renderer, scene, camera, isWebGPU && params.get('ao') !== '0');
+  post.set(quality.knobs.ao);
   /** Build-time knobs as the scene was built. A change to any of these needs a reload to show in full. */
   const buildKey = (k: Knobs) => `${k.antialias}|${k.riceMul}|${k.waterLite}`;
   const builtKey = buildKey(quality.knobs);
@@ -240,6 +244,7 @@ async function boot() {
     proxies.setDecimate(K.decimateProxies);
     proxies.update(archipelago.id);
     applyBlobShadows();
+    post.set(K.ao);
     return buildKey(K) !== builtKey;
   };
   const menu = new QualityMenu((tier) => applyTier(tier, 'manual'), (msg) => inventory.toast(msg));
@@ -383,7 +388,7 @@ async function boot() {
         fishing, fishpedia, chat, birds, audio: sfx, save, loading, touch, daynight, weather,
         resetSave: () => save.reset(), archipelago, bridges, proxies, islands, look, net, remotes, voice, map: fullMap, minimap, shapes,
         renderer, debugDrawStats: () => drawStats(scene, renderer), islandCount: ISLAND_COUNT,
-        contents, terrains, ground, env,
+        contents, terrains, ground, env, post,
         /** The live island's content: trees, paddy, props, torches, terrain, scarecrow. */
         get live() { return live; },
         get trees() { return live.fruitTrees; },
@@ -429,7 +434,7 @@ async function boot() {
     });
     try {
       await renderer.compileAsync(scene, camera);
-      renderer.render(scene, camera);
+      await post.renderAsync();
     } catch (err) {
       console.warn('[warm-up] skipped', err);
     }
@@ -535,7 +540,7 @@ async function boot() {
     proxies.sync();
 
     passes.shadowDraws = 0;
-    renderer.render(scene, camera);
+    post.render();
     perf?.frame(raw);
     stats?.end();
   });

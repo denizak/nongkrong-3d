@@ -45,6 +45,8 @@ export interface Knobs {
   minimapPeriod: number;
   /** Water shader drops its second streak term. Built into the material: needs a reload. */
   waterLite: boolean;
+  /** Screen-space ambient occlusion (PostFx). High tier only, and only on WebGPU. */
+  ao: boolean;
 }
 
 export function knobsFor(tier: Tier, highCap: number): Knobs {
@@ -54,21 +56,21 @@ export function knobsFor(tier: Tier, highCap: number): Knobs {
         pixelCap: highCap, renderScale: 1, antialias: true,
         shadowSize: 2048, shadowHalf: 28, torchLights: 12, proxyRange: 320,
         flowerShare: 1, riceMul: 1, rain: 1500, fireflies: 60, stars: 600, fogFar: 260,
-        blobShadows: false, decimateProxies: false, minimapPeriod: 0.1, waterLite: false,
+        blobShadows: false, decimateProxies: false, minimapPeriod: 0.1, waterLite: false, ao: true,
       };
     case 'medium':
       return {
         pixelCap: 1.25, renderScale: 1, antialias: false,
         shadowSize: 1024, shadowHalf: 22, torchLights: 4, proxyRange: 260,
         flowerShare: 0.5, riceMul: 1.6 / 1.2, rain: 700, fireflies: 30, stars: 300, fogFar: 260,
-        blobShadows: false, decimateProxies: true, minimapPeriod: 0.1, waterLite: false,
+        blobShadows: false, decimateProxies: true, minimapPeriod: 0.1, waterLite: false, ao: false,
       };
     case 'low':
       return {
         pixelCap: 1.0, renderScale: 0.85, antialias: false,
         shadowSize: 0, shadowHalf: 0, torchLights: 2, proxyRange: 200,
         flowerShare: 0.25, riceMul: 2.2 / 1.2, rain: 300, fireflies: 12, stars: 150, fogFar: 200,
-        blobShadows: true, decimateProxies: true, minimapPeriod: 0.2, waterLite: true,
+        blobShadows: true, decimateProxies: true, minimapPeriod: 0.2, waterLite: true, ao: false,
       };
   }
 }
